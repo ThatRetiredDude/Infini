@@ -12,8 +12,6 @@ import { ensureSchema } from './schema.js';
 import { closeDb } from './db.js';
 import {
   attachUser,
-  requireAuth,
-  requireAdmin,
   findUserByUsername,
   verifyPassword,
   issueSession,
@@ -24,6 +22,23 @@ import {
 import { audit, auditReq, getRequestIp } from './audit.js';
 import { buildAccessToken } from './crypto.js';
 import { run } from './db.js';
+import integrationsRouter from './integrations.js';
+import aiHoneypotRouter, {
+  envFileHandler,
+  gitConfigHandler,
+  gitHeadHandler,
+  wpAdminHandler,
+  openApiHandler,
+  apiKeysHandler,
+  internalDebugHandler,
+  backupIndexHandler,
+  awsCredsHandler,
+  dockerConfigHandler,
+  phpmyadminHandler,
+  adminerHandler,
+  securityTxtHandler,
+  honeypotRobotsHandler,
+} from './ai-honeypot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -68,6 +83,32 @@ app.use((_req, res, next) => {
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'infinipot', env: NODE_ENV });
 });
+
+// ─── Admin: integrations CRUD ────────────────────────────────────────────────
+app.use('/api/admin/integrations', integrationsRouter);
+
+// ─── Honeypot: AI-flavored decoys (mounted under /api/ai) ────────────────────
+// These four routes look like accidentally-exposed AI internals.
+app.use('/api/ai', aiHoneypotRouter);
+
+// ─── Honeypot: standalone decoys at scanner-friendly URLs ────────────────────
+// These are the URLs that classic credential / secret / admin scanners look
+// for. Each one returns plausible-looking-but-empty bait and logs the hit
+// with a distinct `source` discriminator.
+app.get(['/.env', '/.env.local', '/.env.production', '/api/.env'], envFileHandler);
+app.get('/.git/config', gitConfigHandler);
+app.get('/.git/HEAD', gitHeadHandler);
+app.get(['/.aws/credentials', '/.aws/config'], awsCredsHandler);
+app.get('/.docker/config.json', dockerConfigHandler);
+app.get(['/wp-admin', '/wp-admin/', '/wp-login.php', '/xmlrpc.php'], wpAdminHandler);
+app.get(['/phpmyadmin', '/phpmyadmin/', '/phpMyAdmin', '/phpMyAdmin/'], phpmyadminHandler);
+app.get(['/adminer.php', '/adminer'], adminerHandler);
+app.get(['/openapi.json', '/swagger.json', '/api/docs.json'], openApiHandler);
+app.get(['/api/keys', '/api/admin/api-keys', '/api/admin/keys'], apiKeysHandler);
+app.get(['/api/internal/debug', '/api/admin/debug', '/api/debug/env'], internalDebugHandler);
+app.get(['/backup.sql', '/dump.sql', '/db_backup.zip', '/backups/', '/backups/index.json'], backupIndexHandler);
+app.get('/.well-known/security.txt', securityTxtHandler);
+app.get('/robots.txt', honeypotRobotsHandler);
 
 // ─── Auth routes ─────────────────────────────────────────────────────────────
 const loginLimiter = rateLimit({

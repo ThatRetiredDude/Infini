@@ -66,6 +66,10 @@ const STATEMENTS = [
     payload_enc TEXT NOT NULL,
     iv TEXT NOT NULL,
     auth_tag TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_tested_at TEXT,
+    last_test_ok INTEGER,
+    last_test_message TEXT,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_by TEXT
   )`,
