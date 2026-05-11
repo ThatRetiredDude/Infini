@@ -17,17 +17,59 @@ const ROUTES = {
 };
 
 function parsePath(pathname) {
-  if (pathname.startsWith('/admin')) return { route: ROUTES.ADMIN, params: { sub: pathname.slice(7) || '' } };
+  if (pathname.startsWith('/admin'))
+    return { route: ROUTES.ADMIN, params: { sub: pathname.slice(7) || '' } };
   if (pathname === '/blog' || pathname === '/blog/') return { route: ROUTES.BLOG, params: {} };
-  if (pathname.startsWith('/blog/')) return { route: ROUTES.BLOG_POST, params: { slug: pathname.slice(6) } };
+  if (pathname.startsWith('/blog/'))
+    return { route: ROUTES.BLOG_POST, params: { slug: pathname.slice(6) } };
   if (pathname === '/donations') return { route: ROUTES.DONATIONS, params: {} };
   return { route: ROUTES.HOME, params: {} };
+}
+
+function normalizePagesVisibility(payload) {
+  const pages = payload?.pages || payload || {};
+  return {
+    home: pages.home || 'public',
+    blog: pages.blog || 'public',
+    donations: pages.donations || 'public',
+  };
+}
+
+function pageAllowed(pageKey, pagesVisibility, user) {
+  const v = pagesVisibility[pageKey] || 'public';
+  const admin = Boolean(user?.role === 'admin' || user?.is_admin);
+  if (v === 'public') return true;
+  if (admin) return true;
+  if (v === 'hidden' || v === 'admin_only') return false;
+  return true;
+}
+
+function PageMuted({ navigate, title }) {
+  return (
+    <div className="max-w-lg mx-auto px-4 py-20">
+      <div className="card p-8 text-center space-y-3">
+        <h1 className="text-xl text-ink-100">{title}</h1>
+        <p className="text-ink-400 text-sm">
+          This route is not available under the current visibility policy. Administrators can preview it
+          after signing in.
+        </p>
+        <button type="button" className="btn-primary" onClick={() => navigate('/')}>
+          Go home
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [pagesVisibility, setPagesVisibility] = useState({
+    home: 'public',
+    blog: 'public',
+    donations: 'public',
+  });
   const [route, setRoute] = useState(() => parsePath(window.location.pathname));
 
   const navigate = useCallback((path) => {
@@ -48,6 +90,13 @@ export default function App() {
       .finally(() => setAuthChecked(true));
   }, []);
 
+  useEffect(() => {
+    fetch('/api/site/visibility', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setPagesVisibility(normalizePagesVisibility(data)))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-full flex flex-col">
       <header className="border-b border-ink-700 bg-ink-900/80 backdrop-blur sticky top-0 z-30">
@@ -60,12 +109,20 @@ export default function App() {
             InfiniPot
           </button>
           <nav className="flex items-center gap-1 ml-2 text-sm">
-            <NavLink current={route.route} target={ROUTES.BLOG} onClick={() => navigate('/blog')}>
-              Blog
-            </NavLink>
-            <NavLink current={route.route} target={ROUTES.DONATIONS} onClick={() => navigate('/donations')}>
-              Donations
-            </NavLink>
+            {pageAllowed('blog', pagesVisibility, user) && (
+              <NavLink current={route.route} target={ROUTES.BLOG} onClick={() => navigate('/blog')}>
+                Blog
+              </NavLink>
+            )}
+            {pageAllowed('donations', pagesVisibility, user) && (
+              <NavLink
+                current={route.route}
+                target={ROUTES.DONATIONS}
+                onClick={() => navigate('/donations')}
+              >
+                Donations
+              </NavLink>
+            )}
           </nav>
           <div className="ml-auto flex items-center gap-2 text-sm">
             {authChecked && user ? (
@@ -98,10 +155,30 @@ export default function App() {
       </header>
 
       <main className="flex-1">
-        {route.route === ROUTES.HOME && <HomePage navigate={navigate} />}
-        {route.route === ROUTES.BLOG && <BlogList navigate={navigate} />}
-        {route.route === ROUTES.BLOG_POST && <BlogPost slug={route.params.slug} navigate={navigate} />}
-        {route.route === ROUTES.DONATIONS && <Donations />}
+        {route.route === ROUTES.HOME &&
+          (pageAllowed('home', pagesVisibility, user) ? (
+            <HomePage navigate={navigate} />
+          ) : (
+            <PageMuted navigate={navigate} title="Home unavailable" />
+          ))}
+        {route.route === ROUTES.BLOG &&
+          (pageAllowed('blog', pagesVisibility, user) ? (
+            <BlogList navigate={navigate} />
+          ) : (
+            <PageMuted navigate={navigate} title="Blog unavailable" />
+          ))}
+        {route.route === ROUTES.BLOG_POST &&
+          (pageAllowed('blog', pagesVisibility, user) ? (
+            <BlogPost slug={route.params.slug} navigate={navigate} />
+          ) : (
+            <PageMuted navigate={navigate} title="Blog unavailable" />
+          ))}
+        {route.route === ROUTES.DONATIONS &&
+          (pageAllowed('donations', pagesVisibility, user) ? (
+            <Donations />
+          ) : (
+            <PageMuted navigate={navigate} title="Donations unavailable" />
+          ))}
         {route.route === ROUTES.ADMIN && (
           <AdminShell
             user={user}

@@ -40,7 +40,7 @@
 
 import { Router } from 'express';
 import { createHash } from 'node:crypto';
-import { getOne, run, prepare } from './db.js';
+import { getOne, prepare } from './db.js';
 import { enrichIp } from './ip-enrichment.js';
 import { getServiceCredentials } from './integrations.js';
 
@@ -69,27 +69,32 @@ function todayDateStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const INSERT_MAZE = prepare(
-  `INSERT INTO maze_hits (ip, ua, date, hit_count, max_depth, paths_visited, self_id_token, self_id_raw)
-   VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
-);
-const UPDATE_MAZE = prepare(
-  `UPDATE maze_hits
-   SET last_seen = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-       hit_count = hit_count + 1,
-       max_depth = MAX(max_depth, ?),
-       paths_visited = ?,
-       self_id_token = COALESCE(?, self_id_token),
-       self_id_raw   = COALESCE(?, self_id_raw),
-       ua            = COALESCE(NULLIF(?, ''), ua)
-   WHERE ip = ? AND date = ?`,
-);
-const SELECT_MAZE = prepare(
-  `SELECT id, paths_visited FROM maze_hits WHERE ip = ? AND date = ?`,
-);
-const UPDATE_MAZE_ENRICH = prepare(
-  `UPDATE maze_hits SET enrichment = ? WHERE ip = ? AND date = ?`,
-);
+let _mzStmts;
+/** Lazy SQL — `prepare()` must run after `ensureSchema()` (ESM import hoisting). */
+function mazeStmt() {
+  if (!_mzStmts) {
+    _mzStmts = {
+      insert: prepare(
+        `INSERT INTO maze_hits (ip, ua, date, hit_count, max_depth, paths_visited, self_id_token, self_id_raw)
+         VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
+      ),
+      update: prepare(
+        `UPDATE maze_hits
+         SET last_seen = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+             hit_count = hit_count + 1,
+             max_depth = MAX(max_depth, ?),
+             paths_visited = ?,
+             self_id_token = COALESCE(?, self_id_token),
+             self_id_raw   = COALESCE(?, self_id_raw),
+             ua            = COALESCE(NULLIF(?, ''), ua)
+         WHERE ip = ? AND date = ?`,
+      ),
+      select: prepare(`SELECT id, paths_visited FROM maze_hits WHERE ip = ? AND date = ?`),
+      enrich: prepare(`UPDATE maze_hits SET enrichment = ? WHERE ip = ? AND date = ?`),
+    };
+  }
+  return _mzStmts;
+}
 
 /**
  * Record a tarpit hit. Per-IP-per-day aggregated in `maze_hits` with
@@ -113,12 +118,13 @@ export function recordMazeHit(req, depth, pathId) {
   const selfIdToken = extractSelfIdToken(combined);
   const selfIdRaw = selfIdToken ? combined.slice(0, 1000) : null;
 
-  const existing = SELECT_MAZE.get(ip, date);
+  const q = mazeStmt();
+  const existing = q.select.get(ip, date);
   let isNew = false;
 
   if (!existing) {
     isNew = true;
-    INSERT_MAZE.run(
+    q.insert.run(
       ip,
       ua || null,
       date,
@@ -138,14 +144,7 @@ export function recordMazeHit(req, depth, pathId) {
       paths.push(pathStr);
       if (paths.length > 50) paths = paths.slice(paths.length - 50);
     }
-    UPDATE_MAZE.run(
-      Number(depth) || 0,
-      JSON.stringify(paths),
-      selfIdToken,
-      selfIdRaw,
-      ua || '',
-      ip,
-      date,
+    q.update.run(
     );
   }
 
@@ -154,7 +153,7 @@ export function recordMazeHit(req, depth, pathId) {
       .then((info) => {
         if (!info) return;
         try {
-          UPDATE_MAZE_ENRICH.run(JSON.stringify(info), ip, date);
+          q.enrich.run(JSON.stringify(info), ip, date);
         } catch {
           /* ignore */
         }
@@ -750,9 +749,10 @@ router.post('/identify', async (req, res) => {
   console.warn(`[tarpit-id] ${new Date().toISOString()} | ip=${ip} | raw=${selfIdRaw.slice(0, 200)}`);
 
   const date = todayDateStr();
-  const existing = SELECT_MAZE.get(ip, date);
+  const q = mazeStmt();
+  const existing = q.select.get(ip, date);
   if (!existing) {
-    INSERT_MAZE.run(ip, ua || null, date, 0, JSON.stringify(['identify']), sessionToken, selfIdRaw);
+    q.insert.run(ip, ua || null, date, 0, JSON.stringify(['identify']), sessionToken, selfIdRaw);
   } else {
     let paths = [];
     try {
@@ -761,7 +761,7 @@ router.post('/identify', async (req, res) => {
       paths = [];
     }
     if (!paths.includes('identify')) paths.push('identify');
-    UPDATE_MAZE.run(0, JSON.stringify(paths), sessionToken, selfIdRaw, ua || '', ip, date);
+    q.update.run(0, JSON.stringify(paths), sessionToken, selfIdRaw, ua || '', ip, date);
   }
 
   await new Promise((r) => setTimeout(r, 800 + Math.random() * 600));

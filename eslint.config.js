@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   {
-    ignores: ['dist/', 'node_modules/', '_legacy/', 'data/'],
+    ignores: ['dist/', 'node_modules/', '_legacy/', 'data/', 'server/scripts/smoke-check.mjs'],
   },
   js.configs.recommended,
   {
@@ -17,6 +17,12 @@ export default [
         document: 'readonly',
         navigator: 'readonly',
         fetch: 'readonly',
+        AbortSignal: 'readonly',
+        URLSearchParams: 'readonly',
+        URL: 'readonly',
+        Blob: 'readonly',
+        prompt: 'readonly',
+        confirm: 'readonly',
         console: 'readonly',
         process: 'readonly',
         Buffer: 'readonly',

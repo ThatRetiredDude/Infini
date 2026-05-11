@@ -14,6 +14,7 @@ import { getAll, getOne, run } from './db.js';
 import { requireAdmin } from './auth.js';
 import { auditReq } from './audit.js';
 import { sendShare } from './security-alerts.js';
+import { filterTorExits, getTorFeedStats } from './tor-feed.js';
 
 const router = Router();
 router.use(requireAdmin);
@@ -38,23 +39,123 @@ function jsonParseSafe(s, fallback = null) {
   }
 }
 
-// ─── Overview ───────────────────────────────────────────────────────────────
-router.get('/overview', (req, res) => {
-  const since = rangeCutoff(req, 24);
+function sqlHoursAgo(h) {
+  const n = Math.max(1, Math.min(24 * 90, h));
+  return `strftime('%Y-%m-%dT%H:%M:%fZ','now','-${n} hours')`;
+}
 
+function uaFamily(ua) {
+  const u = (ua || '').toLowerCase();
+  if (/gptbot/.test(u)) return 'GPTBot (OpenAI)';
+  if (/chatgpt/.test(u)) return 'ChatGPT-User';
+  if (/claudebot/.test(u) || /anthropic/.test(u)) return 'ClaudeBot (Anthropic)';
+  if (/gemini/.test(u) || /googlebot/.test(u)) return 'Google / Gemini';
+  if (/perplexity/.test(u)) return 'PerplexityBot';
+  if (/python-requests/.test(u)) return 'python-requests';
+  if (/python/.test(u)) return 'Python (other)';
+  if (/curl\//.test(u)) return 'curl';
+  if (/wget/.test(u)) return 'wget';
+  if (/scrapy/.test(u)) return 'Scrapy';
+  if (/go-http/.test(u)) return 'Go HTTP client';
+  if (/java/.test(u)) return 'Java HTTP';
+  if (/httpx/.test(u)) return 'httpx';
+  if (/aiohttp/.test(u)) return 'aiohttp';
+  if (!u) return '(no UA)';
+  return 'Other';
+}
+
+function csvEscapeVal(val) {
+  const s = String(val ?? '').replace(/"/g, '""');
+  return /[",\n\r]/.test(s) ? `"${s}"` : s;
+}
+function rowsToCsv(rows) {
+  if (!rows.length) return '';
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.map(csvEscapeVal).join(',')];
+  for (const row of rows) {
+    lines.push(
+      headers
+        .map((h) => csvEscapeVal(typeof row[h] === 'object' ? JSON.stringify(row[h]) : row[h]))
+        .join(','),
+    );
+  }
+  return lines.join('\r\n');
+}
+
+// ─── Overview (legacy-compatible shape + extra counts for InfiniPot) ─────────
+router.get('/overview', (req, res) => {
+  const since24 = sqlHoursAgo(24);
+  const since7d = sqlHoursAgo(24 * 7);
+  const cutoff168 = sqlHoursAgo(24 * 7);
+
+  const ai_flags_row = getOne(
+    `SELECT
+       SUM(CASE WHEN created_at > ${since24} THEN 1 ELSE 0 END) AS flags_24h,
+       SUM(CASE WHEN created_at > ${since7d} THEN 1 ELSE 0 END) AS flags_7d,
+       SUM(CASE WHEN severity = 'high' AND created_at > ${since24} THEN 1 ELSE 0 END) AS high_24h,
+       SUM(CASE WHEN severity = 'medium' AND created_at > ${since24} THEN 1 ELSE 0 END) AS medium_24h,
+       SUM(CASE WHEN severity = 'low' AND created_at > ${since24} THEN 1 ELSE 0 END) AS low_24h
+     FROM ai_input_flags`,
+  );
+  const mi_access_row = getOne(
+    `SELECT
+       SUM(CASE WHEN hit_at > ${since24} THEN 1 ELSE 0 END) AS hits_24h,
+       SUM(CASE WHEN hit_at > ${since7d} THEN 1 ELSE 0 END) AS hits_7d,
+       SUM(CASE WHEN token IS NULL AND hit_at > ${since24} THEN 1 ELSE 0 END) AS honeypot_24h
+     FROM access_log`,
+  );
+  const honeypot_row = getOne(
+    `SELECT
+       SUM(CASE WHEN hit_at > ${since24} THEN 1 ELSE 0 END) AS hits_24h,
+       SUM(CASE WHEN hit_at > ${since7d} THEN 1 ELSE 0 END) AS hits_7d
+     FROM ai_honeypot_hits`,
+  );
+  const maze_tot = getOne(`
+    SELECT
+      (SELECT COUNT(DISTINCT ip) FROM maze_hits) AS unique_ips_all,
+      (SELECT COUNT(DISTINCT ip) FROM maze_hits WHERE date >= date('now', '-6 days')) AS unique_ips_7d,
+      COALESCE((SELECT SUM(hit_count) FROM maze_hits), 0) AS total_hits_all,
+      COALESCE((SELECT SUM(hit_count) FROM maze_hits WHERE date = date('now')), 0) AS hits_today,
+      COALESCE((SELECT SUM(hit_count) FROM maze_hits WHERE date >= date('now', '-6 days')), 0) AS hits_7d,
+      COALESCE((SELECT SUM(CASE WHEN self_id_token IS NOT NULL THEN 1 ELSE 0 END) FROM maze_hits), 0) AS self_ids_all
+     `);
+
+  const top_ips = getAll(`
+    SELECT ip, CAST(SUM(n) AS INTEGER) AS n FROM (
+      SELECT ip, COUNT(*) AS n FROM ai_input_flags WHERE ip IS NOT NULL AND created_at > ${since24}
+      GROUP BY ip
+      UNION ALL
+      SELECT ip, COUNT(*) AS n FROM access_log WHERE ip IS NOT NULL AND hit_at > ${since24}
+      GROUP BY ip
+      UNION ALL
+      SELECT ip, COUNT(*) AS n FROM ai_honeypot_hits WHERE ip IS NOT NULL AND hit_at > ${since24}
+      GROUP BY ip
+      UNION ALL
+      SELECT ip, hit_count AS n FROM maze_hits WHERE ip IS NOT NULL AND date = date('now')
+    ) t GROUP BY ip ORDER BY n DESC LIMIT 10`);
+
+  const sparkFlags = getAll(`
+    SELECT date(created_at) AS day, COUNT(*) AS n FROM ai_input_flags
+    WHERE created_at > ${cutoff168} GROUP BY 1 ORDER BY 1`).map((r) => ({ day: r.day, n: Number(r.n) }));
+  const sparkMi = getAll(`
+    SELECT date(hit_at) AS day, COUNT(*) AS n FROM access_log
+    WHERE hit_at > ${cutoff168} GROUP BY 1 ORDER BY 1`).map((r) => ({ day: r.day, n: Number(r.n) }));
+  const sparkMaze = getAll(`
+    SELECT date AS day, CAST(SUM(hit_count) AS INTEGER) AS n FROM maze_hits
+    WHERE date >= date('now', '-6 days') GROUP BY date ORDER BY date`).map((r) => ({
+    day: r.day,
+    n: Number(r.n),
+  }));
+
+  const since = rangeCutoff(req, 24);
   const counts = {
-    honeypot_hits: Number(
-      getOne(`SELECT COUNT(*) AS n FROM ai_honeypot_hits WHERE hit_at > ${since}`)?.n || 0,
-    ),
+    honeypot_hits: Number(getOne(`SELECT COUNT(*) AS n FROM ai_honeypot_hits WHERE hit_at > ${since}`)?.n || 0),
     maze_hits: Number(
-      getOne(`SELECT COALESCE(SUM(hit_count),0) AS n FROM maze_hits WHERE last_seen > ${since}`)?.n || 0,
+      getOne(`SELECT COALESCE(SUM(hit_count),0) AS n FROM maze_hits WHERE last_seen > ${since}`)?.n ||
+        0,
     ),
-    access_hits: Number(
-      getOne(`SELECT COUNT(*) AS n FROM access_log WHERE hit_at > ${since}`)?.n || 0,
-    ),
-    ai_flags: Number(
-      getOne(`SELECT COUNT(*) AS n FROM ai_input_flags WHERE created_at > ${since}`)?.n || 0,
-    ),
+    access_hits: Number(getOne(`SELECT COUNT(*) AS n FROM access_log WHERE hit_at > ${since}`)?.n || 0),
+    ai_flags: Number(getOne(`SELECT COUNT(*) AS n FROM ai_input_flags WHERE created_at > ${since}`)?.n || 0),
     ai_flags_high: Number(
       getOne(
         `SELECT COUNT(*) AS n FROM ai_input_flags WHERE created_at > ${since} AND severity = 'high'`,
@@ -75,48 +176,99 @@ router.get('/overview', (req, res) => {
     ),
   };
 
-  // Per-hour sparkline (last 24h) for each source
-  const buildSparkline = (sql) =>
-    getAll(sql).map((r) => ({ hour: r.hour, n: Number(r.n) }));
-
-  const sparklines = {
-    honeypot: buildSparkline(
-      `SELECT strftime('%Y-%m-%dT%H:00:00Z', hit_at) AS hour, COUNT(*) AS n
-       FROM ai_honeypot_hits WHERE hit_at > ${since} GROUP BY hour ORDER BY hour`,
-    ),
-    maze: buildSparkline(
-      `SELECT strftime('%Y-%m-%dT%H:00:00Z', last_seen) AS hour, SUM(hit_count) AS n
-       FROM maze_hits WHERE last_seen > ${since} GROUP BY hour ORDER BY hour`,
-    ),
-    access: buildSparkline(
-      `SELECT strftime('%Y-%m-%dT%H:00:00Z', hit_at) AS hour, COUNT(*) AS n
-       FROM access_log WHERE hit_at > ${since} GROUP BY hour ORDER BY hour`,
-    ),
-    ai_flags: buildSparkline(
-      `SELECT strftime('%Y-%m-%dT%H:00:00Z', created_at) AS hour, COUNT(*) AS n
-       FROM ai_input_flags WHERE created_at > ${since} GROUP BY hour ORDER BY hour`,
-    ),
-  };
-
   const top_lures = getAll(
     `SELECT source, COUNT(*) AS hits FROM ai_honeypot_hits
      WHERE hit_at > ${since} GROUP BY source ORDER BY hits DESC LIMIT 10`,
   ).map((r) => ({ source: r.source, hits: Number(r.hits) }));
 
-  const top_ips = getAll(
-    `SELECT ip, COUNT(*) AS hits FROM ai_honeypot_hits
-     WHERE hit_at > ${since} AND ip IS NOT NULL GROUP BY ip ORDER BY hits DESC LIMIT 10`,
-  ).map((r) => ({ ip: r.ip, hits: Number(r.hits) }));
+  res.json({
+    ai_flags: {
+      flags_24h: Number(ai_flags_row?.flags_24h || 0),
+      flags_7d: Number(ai_flags_row?.flags_7d || 0),
+      high_24h: Number(ai_flags_row?.high_24h || 0),
+      medium_24h: Number(ai_flags_row?.medium_24h || 0),
+      low_24h: Number(ai_flags_row?.low_24h || 0),
+    },
+    mi_access: {
+      hits_24h: Number(mi_access_row?.hits_24h || 0),
+      hits_7d: Number(mi_access_row?.hits_7d || 0),
+      honeypot_24h: Number(mi_access_row?.honeypot_24h || 0),
+    },
+    honeypot: {
+      hits_24h: Number(honeypot_row?.hits_24h || 0),
+      hits_7d: Number(honeypot_row?.hits_7d || 0),
+    },
+    maze: {
+      unique_ips_all: Number(maze_tot?.unique_ips_all || 0),
+      unique_ips_7d: Number(maze_tot?.unique_ips_7d || 0),
+      hits_today: Number(maze_tot?.hits_today || 0),
+      hits_7d: Number(maze_tot?.hits_7d || 0),
+      self_ids_all: Number(maze_tot?.self_ids_all || 0),
+    },
+    top_ips,
+    sparklines: { flags: sparkFlags, mi_access: sparkMi, maze: sparkMaze },
+    counts,
+    top_lures,
+  });
+});
 
-  res.json({ window_hours: Number(req.query.hours) || 24, counts, sparklines, top_lures, top_ips });
+router.get('/overview/geo', (req, res) => {
+  const mazeRows = getAll(`SELECT ip, enrichment, hit_count FROM maze_hits WHERE enrichment IS NOT NULL`);
+  const hpRows = getAll(`SELECT ip, enrichment, 1 AS hit_count FROM ai_honeypot_hits WHERE enrichment IS NOT NULL`);
+  const byCountry = new Map();
+  const byOrg = new Map();
+  for (const r of [...mazeRows, ...hpRows]) {
+    const e = jsonParseSafe(r.enrichment, {});
+    const c = e?.summary?.country || e?.ipinfo?.country || null;
+    const org = e?.summary?.org || e?.ipinfo?.org || null;
+    const w = Number(r.hit_count) || 1;
+    const ipKey = r.ip;
+    if (c) {
+      const x = byCountry.get(c) || { country: c, ips: new Set(), hits: 0 };
+      x.ips.add(ipKey);
+      x.hits += w;
+      byCountry.set(c, x);
+    }
+    if (org) {
+      const x = byOrg.get(org) || { org, ips: new Set(), hits: 0 };
+      x.ips.add(ipKey);
+      x.hits += w;
+      byOrg.set(org, x);
+    }
+  }
+  const countries = [...byCountry.values()]
+    .map((x) => ({ country: x.country, ips: x.ips.size, hits: x.hits }))
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, 30);
+  const asns = [...byOrg.values()]
+    .map((x) => ({ org: x.org, ips: x.ips.size, hits: x.hits }))
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, 20);
+  res.json({ countries, asns });
 });
 
 // ─── Honeypot tab ───────────────────────────────────────────────────────────
 router.get('/honeypot', (req, res) => {
-  const since = rangeCutoff(req, 24);
+  if (req.query.since || req.query.until) {
+    const clauses = [];
+    const sp = [];
+    if (req.query.since) {
+      clauses.push(`hit_at >= ?`);
+      sp.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+    }
+    if (req.query.until) {
+      clauses.push(`hit_at <= ?`);
+      sp.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+    }
+    return finishHoneypot(req, res, clauses.join(' AND '), sp);
+  }
+  return finishHoneypot(req, res, `hit_at > ${rangeCutoff(req, 24)}`, []);
+});
+
+function finishHoneypot(req, res, hitClause, baseParams = []) {
   const { limit, offset } = parsePage(req);
-  const where = [`hit_at > ${since}`];
-  const params = [];
+  const where = [hitClause];
+  const params = [...baseParams];
   if (req.query.source) {
     where.push(`source = ?`);
     params.push(String(req.query.source));
@@ -125,11 +277,16 @@ router.get('/honeypot', (req, res) => {
     where.push(`ip = ?`);
     params.push(String(req.query.ip));
   }
+  if (req.query.ua_like) {
+    where.push(`LOWER(IFNULL(ua,'')) LIKE ?`);
+    params.push(`%${String(req.query.ua_like).slice(0, 200).toLowerCase()}%`);
+  }
+  const wc = where.join(' AND ');
   const rows = getAll(
     `SELECT id, hit_at, ip, ua, method, path, source, token, body_hash, body_excerpt,
             headers_excerpt, enrichment
      FROM ai_honeypot_hits
-     WHERE ${where.join(' AND ')}
+     WHERE ${wc}
      ORDER BY hit_at DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset],
   ).map((r) => ({
@@ -137,89 +294,267 @@ router.get('/honeypot', (req, res) => {
     headers_excerpt: jsonParseSafe(r.headers_excerpt, {}),
     enrichment: jsonParseSafe(r.enrichment, null),
   }));
-  const total = Number(
-    getOne(`SELECT COUNT(*) AS n FROM ai_honeypot_hits WHERE ${where.join(' AND ')}`, params)?.n || 0,
+  const total = Number(getOne(`SELECT COUNT(*) AS n FROM ai_honeypot_hits WHERE ${wc}`, params)?.n || 0);
+  res.json({ rows, total, totalCount: total, limit, offset });
+}
+
+// ─── Maze (tarpit) ─────────────────────────────────────────────────────────
+router.get('/maze/live', (_req, res) => {
+  const rowsRaw = getAll(
+    `SELECT ip, ua, date, last_seen, hit_count, max_depth, self_id_token, enrichment
+     FROM maze_hits ORDER BY last_seen DESC LIMIT 20`,
   );
-  res.json({ rows, total, limit, offset });
+  const rows = rowsRaw.map((r) => {
+    const e = jsonParseSafe(r.enrichment, null);
+    return {
+      ...r,
+      enrich_summary: e?.summary || null,
+      enrichment: e,
+    };
+  });
+  res.json({ rows });
 });
 
-// ─── Maze (tarpit) tab ──────────────────────────────────────────────────────
-router.get('/maze', (req, res) => {
-  const since = rangeCutoff(req, 24 * 7);
-  const { limit, offset } = parsePage(req);
-  const rows = getAll(
-    `SELECT id, ip, ua, date, first_seen, last_seen, hit_count, max_depth,
-            paths_visited, self_id_token, self_id_raw, enrichment
-     FROM maze_hits
-     WHERE last_seen > ${since}
-     ORDER BY hit_count DESC, last_seen DESC LIMIT ? OFFSET ?`,
-    [limit, offset],
+router.get('/maze/ip/:ip', (req, res) => {
+  const ip = String(req.params.ip || '').slice(0, 128);
+  if (!ip) return res.status(400).json({ error: 'ip required' });
+
+  const daysRows = getAll(
+    `SELECT * FROM maze_hits WHERE ip = ? ORDER BY date DESC LIMIT 90`,
+    [ip],
   ).map((r) => ({
     ...r,
     paths_visited: jsonParseSafe(r.paths_visited, []),
     enrichment: jsonParseSafe(r.enrichment, null),
   }));
-  const total = Number(
-    getOne(`SELECT COUNT(*) AS n FROM maze_hits WHERE last_seen > ${since}`)?.n || 0,
-  );
-  res.json({ rows, total, limit, offset });
-});
 
-router.get('/maze/stats', (req, res) => {
-  const since = rangeCutoff(req, 24 * 7);
-  const totals = getOne(
-    `SELECT COUNT(*) AS unique_ips,
-            COALESCE(SUM(hit_count),0) AS total_hits,
-            COALESCE(MAX(max_depth),0) AS deepest,
-            COUNT(self_id_token) AS self_id_count
-     FROM maze_hits WHERE last_seen > ${since}`,
+  const summary = getOne(
+    `SELECT
+       COUNT(*) AS total_days,
+       COALESCE(SUM(hit_count),0) AS total_hits,
+       MAX(hit_count) AS peak_hits_day,
+       MAX(max_depth) AS deepest,
+       MIN(first_seen) AS first_ever,
+       MAX(last_seen) AS last_ever,
+       SUM(CASE WHEN self_id_token IS NOT NULL THEN 1 ELSE 0 END) AS self_id_days
+     FROM maze_hits WHERE ip = ?`,
+    [ip],
   );
-  const depthHistogram = getAll(
-    `SELECT max_depth AS depth, COUNT(*) AS n FROM maze_hits
-     WHERE last_seen > ${since} GROUP BY max_depth ORDER BY depth`,
-  ).map((r) => ({ depth: Number(r.depth), n: Number(r.n) }));
-  // crude token+cost estimate: assume avg ~500 tokens per page, $0.0001/1k (very rough)
-  const totalHits = Number(totals?.total_hits || 0);
-  const estimated_tokens = totalHits * 500;
-  const estimated_cost_usd = estimated_tokens * 0.0001 / 1000;
+
+  const topUaRow = getOne(
+    `SELECT ua FROM maze_hits WHERE ip = ? ORDER BY hit_count DESC LIMIT 1`,
+    [ip],
+  );
+  let enrichAgg = null;
+  const enrichedRow = getOne(
+    `SELECT enrichment FROM maze_hits WHERE ip = ? AND enrichment IS NOT NULL ORDER BY hit_count DESC LIMIT 1`,
+    [ip],
+  );
+  if (enrichedRow?.enrichment) enrichAgg = jsonParseSafe(enrichedRow.enrichment, null);
+
+  const totalHits = Number(summary?.total_hits || 0);
+  const tokens_generated = totalHits * 1000;
+  const tokens_pipeline_est = totalHits * 2000;
+  const cost_usd_est =
+    Math.round(((tokens_pipeline_est / 1_000_000) * 15 + Number.EPSILON) * 100) / 100;
+
   res.json({
-    window_hours: Number(req.query.hours) || 24 * 7,
-    unique_ips: Number(totals?.unique_ips || 0),
-    total_hits: totalHits,
-    deepest: Number(totals?.deepest || 0),
-    self_id_count: Number(totals?.self_id_count || 0),
-    estimated_tokens,
-    estimated_cost_usd,
-    depth_histogram: depthHistogram,
+    ip,
+    summary: {
+      ...summary,
+      total_hits: totalHits,
+      tokens_generated,
+      tokens_pipeline_est,
+      cost_usd_est,
+      time_ms_est: totalHits * 1800,
+      enrichment: enrichAgg,
+      top_ua: topUaRow?.ua || null,
+    },
+    days: daysRows,
   });
 });
 
-// ─── Access log tab ─────────────────────────────────────────────────────────
-router.get('/access', (req, res) => {
-  const since = rangeCutoff(req, 24);
-  const { limit, offset } = parsePage(req);
-  const where = [`hit_at > ${since}`];
+router.get('/maze', (req, res) => {
+  const clauses = [`1=1`];
   const params = [];
-  if (req.query.token_null === '1') where.push(`token IS NULL`);
+  if (req.query.since) {
+    clauses.push(`date >= ?`);
+    params.push(String(req.query.since).slice(0, 10));
+  }
+  if (req.query.until) {
+    clauses.push(`date <= ?`);
+    params.push(String(req.query.until).slice(0, 10));
+  }
   if (req.query.ip) {
-    where.push(`ip = ?`);
+    clauses.push(`ip = ?`);
     params.push(String(req.query.ip));
   }
+  if (req.query.self_id_only === 'true') {
+    clauses.push(`self_id_token IS NOT NULL`);
+  }
+
+  let sinceRolling = '';
+  if (!req.query.since && !req.query.until && !req.query.ip && req.query.self_id_only !== 'true') {
+    sinceRolling = rangeCutoff(req, 24 * 7);
+    clauses.push(`last_seen > ${sinceRolling}`);
+  }
+
+  const where = clauses.join(' AND ');
+  const { limit, offset } = parsePage(req);
+
+  let selectSql = `SELECT mh.*`;
+  if (!req.query.ip) {
+    selectSql += `, (SELECT COUNT(DISTINCT date) FROM maze_hits mh2 WHERE mh2.ip = mh.ip) AS distinct_days`;
+  } else {
+    selectSql += `, NULL AS distinct_days`;
+  }
+  selectSql += ` FROM maze_hits mh WHERE ${where}`;
+
+  const rows = getAll(
+    `${selectSql} ORDER BY hit_count DESC, last_seen DESC LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  ).map((r) => ({
+    ...r,
+    paths_visited: jsonParseSafe(r.paths_visited, []),
+    enrichment: jsonParseSafe(r.enrichment, null),
+  }));
+
+  const total = Number(getOne(`SELECT COUNT(*) AS n FROM maze_hits mh WHERE ${where}`, params)?.n || 0);
+  res.json({ rows, total, totalCount: total, limit, offset });
+});
+
+router.get('/maze/stats', (_req, res) => {
+  const depth_histogram = getAll(
+    `SELECT max_depth AS max_depth,
+            CAST(COUNT(DISTINCT ip) AS INTEGER) AS ips,
+            CAST(SUM(hit_count) AS INTEGER) AS hits
+     FROM maze_hits GROUP BY max_depth ORDER BY max_depth`,
+  );
+
+  const mazeRowsUa = getAll(`SELECT ua, ip, COALESCE(hit_count,0) AS hc FROM maze_hits`);
+  const uaFamMap = new Map();
+  for (const row of mazeRowsUa) {
+    const family = uaFamily(row.ua);
+    if (!uaFamMap.has(family)) {
+      uaFamMap.set(family, { family, ips: new Set(), hits: 0 });
+    }
+    const b = uaFamMap.get(family);
+    b.hits += Number(row.hc) || 0;
+    b.ips.add(row.ip);
+  }
+  const ua_summary = [...uaFamMap.values()]
+    .map(({ family, ips, hits }) => ({ family, ips: ips.size, hits }))
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, 15);
+
+  const totals = getOne(
+    `SELECT
+       COALESCE(SUM(hit_count),0) AS total_hits,
+       COUNT(DISTINCT ip) AS unique_ips,
+       SUM(CASE WHEN self_id_token IS NOT NULL THEN 1 ELSE 0 END) AS self_ids,
+       COALESCE(MAX(hit_count),0) AS max_hits_single_ip
+     FROM maze_hits`,
+  );
+  const totalHits = Number(totals?.total_hits || 0);
+  const tokensGenerated = totalHits * 1000;
+  const tokensPipelineEst = totalHits * 2000;
+  const costUsdEst = Math.round(((tokensPipelineEst / 1_000_000) * 15 + Number.EPSILON) * 100) / 100;
+  const timeMsEst = totalHits * 1800;
+
+  res.json({
+    depth_histogram,
+    ua_summary,
+    totals: {
+      ...totals,
+      total_hits: totalHits,
+      tokens_generated: tokensGenerated,
+      tokens_pipeline_est: tokensPipelineEst,
+      cost_usd_est: costUsdEst,
+      time_ms_est: timeMsEst,
+    },
+  });
+});
+
+router.get('/tor-feed', async (req, res) => {
+  try {
+    const stats = getTorFeedStats();
+    const ipsParam = req.query.ips;
+    if (ipsParam) {
+      const ips = String(ipsParam)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 200);
+      const torSet = await filterTorExits(ips);
+      return res.json({ ...stats, checked: ips.length, tor_ips: [...torSet] });
+    }
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'tor_feed_error' });
+  }
+});
+
+// ─── Access log (MI access) ─────────────────────────────────────────────────
+function listAccessLog(req, res) {
+  const clauses = [];
+  const p2 = [];
+  if (!(req.query.since || req.query.until)) {
+    clauses.push(`hit_at > ${rangeCutoff(req, 24)}`);
+  } else {
+    if (req.query.since) {
+      clauses.push(`hit_at >= ?`);
+      p2.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+    }
+    if (req.query.until) {
+      clauses.push(`hit_at <= ?`);
+      p2.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+    }
+  }
+  if (req.query.token_null === 'true' || req.query.token_null === '1') clauses.push(`token IS NULL`);
+  if (req.query.token_null === 'false') clauses.push(`token IS NOT NULL`);
+  if (req.query.ip) {
+    clauses.push(`ip = ?`);
+    p2.push(String(req.query.ip));
+  }
+  if (req.query.ua_like) {
+    clauses.push(`LOWER(IFNULL(user_agent,'')) LIKE ?`);
+    p2.push(`%${String(req.query.ua_like).slice(0, 200).toLowerCase()}%`);
+  }
+  if (req.query.referer_like) {
+    clauses.push(`LOWER(IFNULL(referer,'')) LIKE ?`);
+    p2.push(`%${String(req.query.referer_like).slice(0, 200).toLowerCase()}%`);
+  }
+
+  const { limit, offset } = parsePage(req);
+  const wc = clauses.join(' AND ');
   const rows = getAll(
     `SELECT id, hit_at, ip, user_agent, referer, token, path
-     FROM access_log WHERE ${where.join(' AND ')}
+     FROM access_log WHERE ${wc}
      ORDER BY hit_at DESC LIMIT ? OFFSET ?`,
-    [...params, limit, offset],
+    [...p2, limit, offset],
   );
-  const total = Number(
-    getOne(`SELECT COUNT(*) AS n FROM access_log WHERE ${where.join(' AND ')}`, params)?.n || 0,
-  );
-  res.json({ rows, total, limit, offset });
-});
+  const total = Number(getOne(`SELECT COUNT(*) AS n FROM access_log WHERE ${wc}`, p2)?.n || 0);
+  const fmt = req.query.format;
+  if (fmt === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="mi-access.csv"');
+    return res.send(rowsToCsv(rows));
+  }
+  if (fmt === 'json') {
+    res.setHeader('Content-Disposition', 'attachment; filename="mi-access.json"');
+    return res.json(rows);
+  }
+  res.json({ rows, total, totalCount: total, limit, offset });
+}
+
+router.get('/access', listAccessLog);
+router.get('/mi-access', listAccessLog);
 
 // ─── AI flags tab ───────────────────────────────────────────────────────────
 router.get('/ai-flags', (req, res) => {
-  const since = rangeCutoff(req, 24 * 7);
+  const since = req.query.days
+    ? `strftime('%Y-%m-%dT%H:%M:%fZ','now','-${Math.min(365, Number(req.query.days) || 7) * 24} hours')`
+    : rangeCutoff(req, 24 * 7);
   const { limit, offset } = parsePage(req);
   const where = [`created_at > ${since}`];
   const params = [];
@@ -227,71 +562,158 @@ router.get('/ai-flags', (req, res) => {
     where.push(`severity = ?`);
     params.push(String(req.query.severity));
   }
+  if (req.query.route) {
+    where.push(`route = ?`);
+    params.push(String(req.query.route));
+  }
+  if (req.query.channel) {
+    where.push(`channel = ?`);
+    params.push(String(req.query.channel));
+  }
   if (req.query.user_id) {
     where.push(`user_id = ?`);
     params.push(String(req.query.user_id));
   }
-  const rows = getAll(
+  if (req.query.ip) {
+    where.push(`ip = ?`);
+    params.push(String(req.query.ip));
+  }
+  if (req.query.date_from) {
+    where.push(`date(created_at) >= date(?)`);
+    params.push(String(req.query.date_from).slice(0, 10));
+  }
+  if (req.query.date_to) {
+    where.push(`date(created_at) <= date(?)`);
+    params.push(String(req.query.date_to).slice(0, 10));
+  }
+  const wc = where.join(' AND ');
+  const flagsRows = getAll(
     `SELECT id, user_id, username, route, channel, severity, reasons, input_excerpt,
             ip, ua, path, action_taken, created_at
-     FROM ai_input_flags WHERE ${where.join(' AND ')}
+     FROM ai_input_flags WHERE ${wc}
      ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset],
   ).map((r) => ({ ...r, reasons: jsonParseSafe(r.reasons, []) }));
-  const total = Number(
-    getOne(`SELECT COUNT(*) AS n FROM ai_input_flags WHERE ${where.join(' AND ')}`, params)?.n || 0,
-  );
-  res.json({ rows, total, limit, offset });
+  const totalCount = Number(getOne(`SELECT COUNT(*) AS n FROM ai_input_flags WHERE ${wc}`, params)?.n || 0);
+
+  const format = req.query.format;
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="ai-flags.csv"');
+    return res.send(rowsToCsv(flagsRows));
+  }
+  if (format === 'json') {
+    res.setHeader('Content-Disposition', 'attachment; filename="ai-flags.json"');
+    return res.json(flagsRows);
+  }
+  res.json({ flags: flagsRows, rows: flagsRows, totalCount, total: totalCount, limit, offset });
 });
 
-// ─── Flagged IPs derived from enrichment ────────────────────────────────────
-router.get('/flagged', (req, res) => {
-  const since = rangeCutoff(req, 24 * 7);
-  // Pull enrichment from all sources, group by IP, surface the worst flags
-  const honeypotRows = getAll(
-    `SELECT ip, COUNT(*) AS hits, MAX(enrichment) AS enrichment
-     FROM ai_honeypot_hits WHERE hit_at > ${since} AND ip IS NOT NULL AND enrichment IS NOT NULL
-     GROUP BY ip`,
-  );
-  const mazeRows = getAll(
-    `SELECT ip, SUM(hit_count) AS hits, MAX(enrichment) AS enrichment
-     FROM maze_hits WHERE last_seen > ${since} AND ip IS NOT NULL AND enrichment IS NOT NULL
-     GROUP BY ip`,
-  );
-  const byIp = new Map();
-  for (const r of honeypotRows) {
-    byIp.set(r.ip, {
-      ip: r.ip,
-      hits: Number(r.hits),
-      enrichment: jsonParseSafe(r.enrichment, null),
-      sources: ['honeypot'],
-    });
-  }
-  for (const r of mazeRows) {
-    const existing = byIp.get(r.ip);
-    if (existing) {
-      existing.hits += Number(r.hits);
-      existing.sources.push('maze');
-    } else {
-      byIp.set(r.ip, {
+// ─── Flagged IPs (legacy UI: repeat offenders, abuse, Tor) ───────────────────
+router.get('/flagged', async (req, res) => {
+  try {
+    const cutoff = sqlHoursAgo(24 * 90);
+
+    const repeatRows = getAll(
+      `SELECT ip, CAST(COUNT(DISTINCT day) AS INTEGER) AS days,
+              CAST(SUM(hits) AS INTEGER) AS total_hits,
+              MAX(last_seen) AS last_seen,
+              MAX(enrichment) AS enrichment
+       FROM (
+         SELECT ip, date AS day, hit_count AS hits, last_seen, enrichment FROM maze_hits WHERE last_seen > ${cutoff}
+         UNION ALL
+         SELECT ip, date(hit_at) AS day, 1 AS hits, hit_at AS last_seen, enrichment
+         FROM ai_honeypot_hits WHERE ip IS NOT NULL AND hit_at > ${cutoff}
+       ) x
+       GROUP BY ip HAVING COUNT(DISTINCT day) >= 5
+       ORDER BY total_hits DESC LIMIT 200`,
+    ).map((r) => ({
+      ...r,
+      enrichment: typeof r.enrichment === 'string' ? jsonParseSafe(r.enrichment, null) : r.enrichment,
+    }));
+
+    const highAbuse = [];
+    const seenAbuseIp = new Set();
+    for (const r of getAll(`
+      SELECT ip, enrichment, last_seen, source FROM (
+        SELECT ip, enrichment, last_seen, 'maze' AS source FROM maze_hits
+          WHERE enrichment IS NOT NULL AND last_seen > ${cutoff}
+        UNION ALL
+        SELECT ip, enrichment, hit_at AS last_seen, 'honeypot' FROM ai_honeypot_hits
+          WHERE ip IS NOT NULL AND enrichment IS NOT NULL AND hit_at > ${cutoff}
+      )`)) {
+      const e = typeof r.enrichment === 'string' ? jsonParseSafe(r.enrichment, {}) : r.enrichment;
+      const score = Number(e?.abuseipdb?.abuse_confidence);
+      if (!Number.isFinite(score) || score < 50) continue;
+      if (seenAbuseIp.has(r.ip)) continue;
+      seenAbuseIp.add(r.ip);
+      highAbuse.push({
         ip: r.ip,
-        hits: Number(r.hits),
-        enrichment: jsonParseSafe(r.enrichment, null),
-        sources: ['maze'],
+        enrichment: e,
+        last_seen: r.last_seen,
+        source: r.source,
       });
     }
+
+    const allForTor = getAll(`
+      SELECT ip FROM maze_hits WHERE ip IS NOT NULL
+      UNION SELECT ip FROM ai_honeypot_hits WHERE ip IS NOT NULL
+      UNION SELECT ip FROM access_log WHERE ip IS NOT NULL`);
+    const uniqueIps = [...new Set(allForTor.map((x) => x.ip))];
+    const torSet = await filterTorExits(uniqueIps);
+
+    let torHits = [];
+    for (const ip of torSet) {
+      const mh = getOne(
+        `SELECT enrichment, last_seen FROM maze_hits WHERE ip = ? ORDER BY last_seen DESC LIMIT 1`,
+        [ip],
+      );
+      const pick =
+        mh ||
+        getOne(
+          `SELECT enrichment, hit_at AS last_seen FROM ai_honeypot_hits WHERE ip = ? ORDER BY hit_at DESC LIMIT 1`,
+          [ip],
+        );
+      if (pick) {
+        torHits.push({
+          ip,
+          enrichment: jsonParseSafe(pick.enrichment, null),
+          last_seen: pick.last_seen,
+          flags: ['tor'],
+        });
+      }
+    }
+
+    torHits.sort((a, b) =>
+      String(b.last_seen || '').localeCompare(String(a.last_seen || '')),
+    );
+    torHits = torHits.slice(0, 500);
+
+    const mapRepeat = repeatRows.map((r) => ({
+      ...r,
+      is_tor: torSet.has(r.ip),
+      flags: ['repeat', torSet.has(r.ip) ? 'tor' : null].filter(Boolean),
+      enrichment: typeof r.enrichment === 'object' ? r.enrichment : r.enrichment,
+    }));
+
+    const mapAbuse = highAbuse.map((r) => ({
+      ip: r.ip,
+      enrichment: r.enrichment,
+      last_seen: r.last_seen,
+      source: r.source,
+      is_tor: torSet.has(r.ip),
+      flags: ['high-abuse', torSet.has(r.ip) ? 'tor' : null].filter(Boolean),
+    }));
+
+    res.json({
+      repeat_offenders: mapRepeat,
+      high_abuse: mapAbuse,
+      tor_hits: torHits,
+      tor_feed: getTorFeedStats(),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'flagged_error' });
   }
-
-  const rows = [...byIp.values()].map((entry) => {
-    const flags = entry.enrichment?.summary?.flags || [];
-    const threat = entry.enrichment?.summary?.threat_level || 'unknown';
-    const country = entry.enrichment?.summary?.country || null;
-    const org = entry.enrichment?.summary?.org || null;
-    return { ...entry, threat_level: threat, flags, country, org };
-  });
-
-  rows.sort((a, b) => b.hits - a.hits);
-  res.json({ rows });
 });
 
 // ─── Honeypot lure inventory ────────────────────────────────────────────────
@@ -350,9 +772,12 @@ router.get('/lures', (_req, res) => {
 
 // ─── Alert rules CRUD ───────────────────────────────────────────────────────
 router.get('/alerts', (_req, res) => {
-  const rules = getAll(
-    `SELECT * FROM security_alert_rules ORDER BY id`,
-  ).map((r) => ({ ...r, predicate: jsonParseSafe(r.predicate, {}), enabled: !!r.enabled }));
+  const rules = getAll(`SELECT * FROM security_alert_rules ORDER BY id`).map((r) => ({
+    ...r,
+    source: r.source === 'access_log' ? 'mi_access' : r.source,
+    predicate: jsonParseSafe(r.predicate, {}),
+    enabled: !!r.enabled,
+  }));
   const deliveries = getAll(
     `SELECT id, rule_id, fired_at, payload_excerpt, ok, error
      FROM security_alert_deliveries ORDER BY fired_at DESC LIMIT 50`,
@@ -373,21 +798,28 @@ function validateRulePayload(body) {
   return errs;
 }
 
+function coerceAlertPayload(body = {}) {
+  const out = { ...body };
+  if (out.source === 'mi_access') out.source = 'access_log';
+  return out;
+}
+
 router.post('/alerts', (req, res) => {
-  const errs = validateRulePayload(req.body);
+  const body = coerceAlertPayload(req.body);
+  const errs = validateRulePayload(body);
   if (errs.length) return res.status(400).json({ error: 'invalid_payload', details: errs });
-  const cooldown = Number(req.body.cooldown_min) || 5;
-  const enabled = req.body.enabled === false ? 0 : 1;
+  const cooldown = Number(body.cooldown_min) || 5;
+  const enabled = body.enabled === false ? 0 : 1;
   const result = run(
     `INSERT INTO security_alert_rules
        (name, source, predicate, channel, recipient, enabled, cooldown_min, created_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      String(req.body.name).slice(0, 200),
-      req.body.source,
-      JSON.stringify(req.body.predicate || {}),
-      req.body.channel,
-      String(req.body.recipient).slice(0, 500),
+      String(body.name).slice(0, 200),
+      body.source,
+      JSON.stringify(body.predicate || {}),
+      body.channel,
+      String(body.recipient).slice(0, 500),
       enabled,
       cooldown,
       req.user?.id || null,
@@ -397,7 +829,7 @@ router.post('/alerts', (req, res) => {
     actionType: 'security_alert_rule.create',
     targetType: 'security_alert_rule',
     targetId: String(result.lastInsertRowid),
-    payload: { name: req.body.name, source: req.body.source, channel: req.body.channel },
+    payload: { name: body.name, source: body.source, channel: body.channel },
   });
   res.json({ ok: true, id: Number(result.lastInsertRowid) });
 });
@@ -407,20 +839,35 @@ router.put('/alerts/:id', (req, res) => {
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'invalid_id' });
   const existing = getOne(`SELECT * FROM security_alert_rules WHERE id = ?`, [id]);
   if (!existing) return res.status(404).json({ error: 'not_found' });
-  const errs = validateRulePayload({ ...existing, ...req.body });
+  const merged = coerceAlertPayload({
+    name: req.body.name ?? existing.name,
+    source: req.body.source ?? existing.source,
+    channel: req.body.channel ?? existing.channel,
+    recipient: req.body.recipient ?? existing.recipient,
+    enabled:
+      typeof req.body.enabled === 'boolean' ? req.body.enabled : Boolean(Number(existing.enabled)),
+    cooldown_min: req.body.cooldown_min ?? existing.cooldown_min,
+    predicate:
+      req.body.predicate !== undefined ? req.body.predicate : jsonParseSafe(existing.predicate, {}),
+  });
+  const errs = validateRulePayload(merged);
   if (errs.length) return res.status(400).json({ error: 'invalid_payload', details: errs });
+  const predObj =
+    typeof merged.predicate === 'object' && merged.predicate !== null
+      ? merged.predicate
+      : jsonParseSafe(String(merged.predicate || '{}'), {});
   run(
     `UPDATE security_alert_rules SET
        name = ?, source = ?, predicate = ?, channel = ?, recipient = ?, enabled = ?, cooldown_min = ?
      WHERE id = ?`,
     [
-      String(req.body.name || existing.name).slice(0, 200),
-      req.body.source || existing.source,
-      JSON.stringify(req.body.predicate || jsonParseSafe(existing.predicate, {})),
-      req.body.channel || existing.channel,
-      String(req.body.recipient || existing.recipient).slice(0, 500),
-      req.body.enabled === false ? 0 : req.body.enabled === true ? 1 : existing.enabled,
-      Number(req.body.cooldown_min) || existing.cooldown_min,
+      String(merged.name).slice(0, 200),
+      merged.source,
+      JSON.stringify(predObj),
+      merged.channel,
+      String(merged.recipient).slice(0, 500),
+      merged.enabled === false ? 0 : 1,
+      Number(merged.cooldown_min) || existing.cooldown_min,
       id,
     ],
   );
@@ -466,7 +913,7 @@ router.post('/share', async (req, res) => {
          WHERE last_seen > strftime('%Y-%m-%dT%H:%M:%fZ','now','-${hours} hours')
          ORDER BY hit_count DESC LIMIT 500`,
       );
-    } else if (source === 'access_log') {
+    } else if (source === 'access_log' || source === 'mi_access') {
       rows = getAll(
         `SELECT hit_at, ip, user_agent, path, token FROM access_log
          WHERE hit_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-${hours} hours')
@@ -488,7 +935,7 @@ router.post('/share', async (req, res) => {
       recipient,
       subject: subject || `InfiniPot · ${source} (${hours}h)`,
       rows,
-      format: format || 'csv',
+      format: ['csv', 'json'].includes(format) ? format : format || 'summary',
     });
     auditReq(req, {
       actionType: 'security.share',

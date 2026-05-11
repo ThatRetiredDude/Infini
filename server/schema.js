@@ -272,13 +272,30 @@ const STATEMENTS = [
     last_viewed_at TEXT,
     PRIMARY KEY (item_type, item_id)
   )`,
+
+  // ─── SPA / API surfacing gates (minimal keys aligned with routed pages) ───
+  `CREATE TABLE IF NOT EXISTS page_visibility (
+    page_key TEXT PRIMARY KEY CHECK (page_key IN ('home','blog','donations')),
+    visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','hidden','admin_only')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
+  )`,
 ];
+
+const DEFAULT_PAGE_KEYS = /** @type {const} */ (['home', 'blog', 'donations']);
 
 export function ensureSchema() {
   const db = getDb();
   const tx = db.transaction(() => {
     for (const stmt of STATEMENTS) {
       db.exec(stmt);
+    }
+    const ins = db.prepare(
+      `INSERT OR IGNORE INTO page_visibility (page_key, visibility, updated_at)
+       VALUES (?, 'public', strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+    );
+    for (const key of DEFAULT_PAGE_KEYS) {
+      ins.run(key);
     }
   });
   tx();

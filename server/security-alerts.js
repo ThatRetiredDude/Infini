@@ -26,7 +26,13 @@ function timeCutoffSql(windowMin) {
   return `strftime('%Y-%m-%dT%H:%M:%fZ','now','-${n} minutes')`;
 }
 
+/** Alerts UI historically used `mi_access`; stored as `access_log`. */
+function normalizeAlertSource(source) {
+  return source === 'mi_access' ? 'access_log' : source;
+}
+
 function evaluatePredicate(source, predicate = {}) {
+  source = normalizeAlertSource(source);
   const windowMin = Number(predicate.window_min || 60);
   const threshold = Number(predicate.count || 1);
   const cutoff = timeCutoffSql(windowMin);
@@ -84,6 +90,7 @@ function evaluatePredicate(source, predicate = {}) {
 }
 
 function buildExcerpt(source, predicate = {}) {
+  source = normalizeAlertSource(source);
   const windowMin = Number(predicate.window_min || 60);
   const cutoff = timeCutoffSql(windowMin);
   let sql = '';
@@ -229,10 +236,11 @@ export async function runAlerts() {
           if (elapsedMin < (rule.cooldown_min ?? 5)) continue;
         }
         const predicate = JSON.parse(rule.predicate || '{}');
-        const fired = evaluatePredicate(rule.source, predicate);
+        const src = normalizeAlertSource(rule.source);
+        const fired = evaluatePredicate(src, predicate);
         if (!fired) continue;
 
-        const excerpt = buildExcerpt(rule.source, predicate);
+        const excerpt = buildExcerpt(src, predicate);
         let ok = false;
         let errMsg = null;
         try {

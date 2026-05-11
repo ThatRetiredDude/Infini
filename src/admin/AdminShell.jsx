@@ -1,4 +1,22 @@
-export default function AdminShell({ user, authChecked, onRequireLogin, sub }) {
+import { useCallback, useState } from 'react';
+import SecurityHub from './Security/index.jsx';
+import BlogAdmin from './BlogAdmin.jsx';
+import CarouselAdmin from './CarouselAdmin.jsx';
+import IntegrationsAdmin from './IntegrationsAdmin.jsx';
+import AuditAdmin from './AuditAdmin.jsx';
+import AiLogReviewAdmin from './AiLogReviewAdmin.jsx';
+import PageVisibilityAdmin from './PageVisibilityAdmin.jsx';
+
+export default function AdminShell({ user, authChecked, onRequireLogin, sub, navigate }) {
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((payload) => {
+    const type = payload?.type || 'info';
+    const text = payload?.text || '';
+    setToast({ type, text });
+    window.setTimeout(() => setToast(null), 5500);
+  }, []);
+
   if (!authChecked) {
     return (
       <div className="max-w-4xl mx-auto p-8 text-ink-400">Checking session…</div>
@@ -32,17 +50,130 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub }) {
     );
   }
 
+  const section = (sub || '').split('/')[0] || '';
+
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-2xl mb-4">Admin</h1>
-      <p className="text-ink-400 mb-6">
-        Welcome, <span className="text-ink-100">{user.username}</span>. The full
-        admin UI (Security Hub, Blog editor, Carousel, Integrations, Audit Log,
-        AI Log Review) will be ported in subsequent phases.
-      </p>
-      <div className="card p-4 font-mono text-xs text-ink-300">
-        sub-route: {sub || '/'}
-      </div>
+      {toast?.text && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg border text-sm shadow-lg max-w-sm ${
+            toast.type === 'error'
+              ? 'bg-rose-950/95 border-rose-600 text-rose-100'
+              : toast.type === 'success'
+                ? 'bg-emerald-950/95 border-emerald-600 text-emerald-100'
+                : 'bg-ink-900/95 border-ink-600 text-ink-100'
+          }`}
+        >
+          {toast.text}
+        </div>
+      )}
+
+      {section !== 'security' && (
+        <div className="mb-6 flex flex-wrap gap-2 items-center justify-between">
+          <h1 className="text-2xl font-semibold text-ink-100">Admin</h1>
+          <nav className="flex flex-wrap gap-2 text-sm">
+            <NavBtn active={section === ''} onClick={() => navigate('/admin')}>
+              Dashboard
+            </NavBtn>
+            <NavBtn active={section === 'security'} onClick={() => navigate('/admin/security')}>
+              Security Hub
+            </NavBtn>
+            <NavBtn active={section === 'blog'} onClick={() => navigate('/admin/blog')}>
+              Blog
+            </NavBtn>
+            <NavBtn active={section === 'carousel'} onClick={() => navigate('/admin/carousel')}>
+              Carousel
+            </NavBtn>
+            <NavBtn
+              active={section === 'visibility'}
+              onClick={() => navigate('/admin/visibility')}
+            >
+              Visibility
+            </NavBtn>
+            <NavBtn
+              active={section === 'integrations'}
+              onClick={() => navigate('/admin/integrations')}
+            >
+              Integrations
+            </NavBtn>
+            <NavBtn active={section === 'audit'} onClick={() => navigate('/admin/audit')}>
+              Audit Log
+            </NavBtn>
+            <NavBtn
+              active={section === 'ai-review'}
+              onClick={() => navigate('/admin/ai-review')}
+            >
+              AI Log Review
+            </NavBtn>
+          </nav>
+        </div>
+      )}
+
+      {section === '' && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <AdminCard title="Security Hub" onClick={() => navigate('/admin/security')}>
+            Honeypot hits, tarpit / maze analytics, flagged IPs, and alert delivery rules.
+          </AdminCard>
+          <AdminCard title="Carousel" onClick={() => navigate('/admin/carousel')}>
+            Homepage featured tiles surfaced on the landing page grid.
+          </AdminCard>
+          <AdminCard title="Page visibility" onClick={() => navigate('/admin/visibility')}>
+            Who can reach home, blog, and donations publicly — plus gated APIs.
+          </AdminCard>
+          <AdminCard title="Blog" onClick={() => navigate('/admin/blog')}>
+            Create and publish posts with the TipTap rich editor.
+          </AdminCard>
+          <AdminCard title="Integrations" onClick={() => navigate('/admin/integrations')}>
+            xAI, SMTP, enrichment APIs, Discord, Telegram, and webhooks.
+          </AdminCard>
+          <AdminCard title="AI Log Review" onClick={() => navigate('/admin/ai-review')}>
+            Send curated log excerpts to Grok for analysis and suggested responses.
+          </AdminCard>
+        </div>
+      )}
+
+      {section === 'security' && (
+        <SecurityHub
+          onNavigate={(path) => navigate(path)}
+          onToast={showToast}
+        />
+      )}
+
+      {section === 'blog' && <BlogAdmin onToast={showToast} />}
+      {section === 'carousel' && <CarouselAdmin onToast={showToast} />}
+      {section === 'integrations' && <IntegrationsAdmin onToast={showToast} />}
+      {section === 'audit' && <AuditAdmin onToast={showToast} />}
+      {section === 'ai-review' && <AiLogReviewAdmin onToast={showToast} />}
+      {section === 'visibility' && <PageVisibilityAdmin onToast={showToast} />}
     </div>
+  );
+}
+
+function NavBtn({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? 'px-3 py-1.5 rounded-md bg-ink-800 text-accent border border-accent/40'
+          : 'px-3 py-1.5 rounded-md text-ink-400 hover:text-ink-100 border border-transparent'
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+function AdminCard({ title, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="card p-5 text-left hover:border-accent/40 transition-colors"
+    >
+      <h2 className="text-lg text-ink-100 font-semibold mb-2">{title}</h2>
+      <p className="text-sm text-ink-400">{children}</p>
+    </button>
   );
 }

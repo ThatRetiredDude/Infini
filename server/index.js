@@ -40,6 +40,14 @@ import aiHoneypotRouter, {
   honeypotRobotsHandler,
 } from './ai-honeypot.js';
 import aiTarpitRouter from './ai-tarpit.js';
+import securityHubRouter from './security-hub.js';
+import aiFlagsAdminRouter from './ai-flags-admin.js';
+import { startAlertsScheduler } from './security-alerts.js';
+import { sitePublicRouter, siteAdminRouter } from './page-visibility.js';
+import { createBlogPublicRouter, createBlogAdminRouter } from './blog.js';
+import { createCarouselPublicRouter, createCarouselAdminRouter } from './carousel.js';
+import adminAuditRouter from './admin-audit.js';
+import aiLogReviewRouter from './ai-log-review.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -85,8 +93,20 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'infinipot', env: NODE_ENV });
 });
 
+// ─── Public / site ─────────────────────────────────────────────────────────────
+app.use('/api/site', sitePublicRouter);
+app.use('/api/blog', createBlogPublicRouter());
+app.use('/api/carousel', createCarouselPublicRouter());
+
 // ─── Admin: integrations CRUD ────────────────────────────────────────────────
 app.use('/api/admin/integrations', integrationsRouter);
+app.use('/api/admin/site', siteAdminRouter);
+app.use('/api/admin/security', securityHubRouter);
+app.use('/api/admin/ai-flags', aiFlagsAdminRouter);
+app.use('/api/admin/blog', createBlogAdminRouter());
+app.use('/api/admin/carousel', createCarouselAdminRouter());
+app.use('/api/admin/audit', adminAuditRouter);
+app.use('/api/admin/ai', aiLogReviewRouter);
 
 // ─── Honeypot: AI-flavored decoys (mounted under /api/ai) ────────────────────
 // IMPORTANT: tarpit (router) must mount BEFORE aiHoneypotRouter, because the
@@ -254,14 +274,22 @@ app.get('*', (req, res, next) => {
 });
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
+let stopAlertsScheduler = null;
 const server = app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[infinipot] listening on http://localhost:${PORT}  (${NODE_ENV})`);
+  if (process.env.DISABLE_SECURITY_ALERT_SCHEDULER !== '1') {
+    stopAlertsScheduler = startAlertsScheduler();
+  }
 });
 
 function shutdown(signal) {
   // eslint-disable-next-line no-console
   console.log(`[infinipot] received ${signal}, shutting down…`);
+  if (typeof stopAlertsScheduler === 'function') {
+    stopAlertsScheduler();
+    stopAlertsScheduler = null;
+  }
   server.close(() => {
     closeDb();
     process.exit(0);

@@ -13,7 +13,8 @@
     "db:init": "node server/scripts/db-init.js",
     "db:seed-admin": "node server/scripts/seed-admin.js",
     "lint": "eslint . --ext .js,.jsx",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "smoke": "node server/scripts/smoke-check.mjs"
   },
   "dependencies": {
     "@tiptap/extension-character-count": "^3.22.3",
