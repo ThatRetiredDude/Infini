@@ -6,7 +6,7 @@ FROM node:20-bookworm-slim AS build
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Build deps for better-sqlite3 + sharp
+# Build toolchain for native better-sqlite3
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 make g++ ca-certificates \
@@ -25,7 +25,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 WORKDIR /app
 
-# Runtime libs only (sharp needs libvips, better-sqlite3 ships its own binary)
+# Runtime base (better-sqlite3 ships its own binary)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates tini \
