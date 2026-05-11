@@ -39,6 +39,7 @@ import aiHoneypotRouter, {
   securityTxtHandler,
   honeypotRobotsHandler,
 } from './ai-honeypot.js';
+import aiTarpitRouter from './ai-tarpit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -88,7 +89,11 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/admin/integrations', integrationsRouter);
 
 // ─── Honeypot: AI-flavored decoys (mounted under /api/ai) ────────────────────
-// These four routes look like accidentally-exposed AI internals.
+// IMPORTANT: tarpit (router) must mount BEFORE aiHoneypotRouter, because the
+// aiHoneypotRouter is also mounted under /api/ai and Express resolves the
+// most-specific path first only when both routers are at the same prefix and
+// the longer one is registered first. Both routers' routes are disjoint.
+app.use('/api/ai/explore', aiTarpitRouter);
 app.use('/api/ai', aiHoneypotRouter);
 
 // ─── Honeypot: standalone decoys at scanner-friendly URLs ────────────────────
