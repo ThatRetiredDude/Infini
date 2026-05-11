@@ -215,7 +215,7 @@ function logAccess(req, token) {
       ],
     );
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[access_log] insert failed:', err?.message || err);
   }
 }
@@ -276,7 +276,7 @@ app.get('*', (req, res, next) => {
 // ─── Boot ────────────────────────────────────────────────────────────────────
 let stopAlertsScheduler = null;
 const server = app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
+   
   console.log(`[infinipot] listening on http://localhost:${PORT}  (${NODE_ENV})`);
   if (process.env.DISABLE_SECURITY_ALERT_SCHEDULER !== '1') {
     stopAlertsScheduler = startAlertsScheduler();
@@ -284,7 +284,7 @@ const server = app.listen(PORT, () => {
 });
 
 function shutdown(signal) {
-  // eslint-disable-next-line no-console
+   
   console.log(`[infinipot] received ${signal}, shutting down…`);
   if (typeof stopAlertsScheduler === 'function') {
     stopAlertsScheduler();

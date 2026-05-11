@@ -37,7 +37,7 @@ export default function AIFlagsTab({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, [page, filter]);
+  }, [page, filter, toast]);
 
   useEffect(() => { loadFlags(); }, [loadFlags]);
 

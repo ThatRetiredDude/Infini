@@ -31,7 +31,7 @@ export function audit({
       ],
     );
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[audit] insert failed:', err?.message || err);
   }
 }

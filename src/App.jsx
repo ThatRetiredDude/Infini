@@ -1,12 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import AuthModal from './components/AuthModal.jsx';
 import HoneypotBait from './components/HoneypotBait.jsx';
 import HomePage from './pages/Home.jsx';
 import BlogList from './pages/Blog.jsx';
 import BlogPost from './pages/BlogPost.jsx';
 import Donations from './pages/Donations.jsx';
-import AdminShell from './admin/AdminShell.jsx';
 import { fetchMe } from './lib/api.js';
+
+const AdminShell = lazy(() => import('./admin/AdminShell.jsx'));
 
 const ROUTES = {
   HOME: 'home',
@@ -180,13 +181,21 @@ export default function App() {
             <PageMuted navigate={navigate} title="Donations unavailable" />
           ))}
         {route.route === ROUTES.ADMIN && (
-          <AdminShell
-            user={user}
-            authChecked={authChecked}
-            onRequireLogin={() => setAuthOpen(true)}
-            sub={route.params.sub}
-            navigate={navigate}
-          />
+          <Suspense
+            fallback={
+              <div className="max-w-6xl mx-auto p-16 text-center text-ink-400 text-sm">
+                Loading admin console…
+              </div>
+            }
+          >
+            <AdminShell
+              user={user}
+              authChecked={authChecked}
+              onRequireLogin={() => setAuthOpen(true)}
+              sub={route.params.sub}
+              navigate={navigate}
+            />
+          </Suspense>
         )}
       </main>
 

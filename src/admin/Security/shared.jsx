@@ -3,6 +3,8 @@
  * Extracted / supersedes the equivalent code in AIFlags.jsx.
  */
 
+import { useState, useEffect, useCallback } from 'react';
+
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 export { API_BASE };
 
@@ -97,8 +99,6 @@ export function ReasonChips({ reasons }) {
 
 // ─── Disabled users panel (shared with AIFlagsTab) ───────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
-
 export function DisabledUsersPanel({ toast, onRestored }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -116,8 +116,7 @@ export function DisabledUsersPanel({ toast, onRestored }) {
     } finally {
       setLoading(false);
     }
-  }, []);
-
+  }, [toast]);
   useEffect(() => { load(); }, [load]);
 
   const restore = async (userId, username) => {

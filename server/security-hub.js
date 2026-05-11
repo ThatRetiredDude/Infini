@@ -247,6 +247,53 @@ router.get('/overview/geo', (req, res) => {
   res.json({ countries, asns });
 });
 
+// ─── Honeypot aggregate stats (for Security Hub dashboards) ──────────────────
+router.get('/honeypot/stats', (_req, res) => {
+  const since24 = sqlHoursAgo(24);
+  const since168 = sqlHoursAgo(24 * 7);
+  const totals = getOne(`
+    SELECT
+      (SELECT COUNT(*) FROM ai_honeypot_hits) AS hits_all,
+      (SELECT COUNT(*) FROM ai_honeypot_hits WHERE hit_at > ${since24}) AS hits_24h,
+      (SELECT COUNT(*) FROM ai_honeypot_hits WHERE hit_at > ${since168}) AS hits_7d,
+      (SELECT COUNT(DISTINCT ip) FROM ai_honeypot_hits WHERE ip IS NOT NULL AND hit_at > ${since24}) AS distinct_ips_24h,
+      (SELECT COUNT(DISTINCT ip) FROM ai_honeypot_hits WHERE ip IS NOT NULL) AS distinct_ips_all,
+      (SELECT COUNT(DISTINCT source) FROM ai_honeypot_hits WHERE source IS NOT NULL) AS distinct_sources_seen
+  `);
+  const by_source = getAll(`
+    SELECT source, COUNT(*) AS hits
+      FROM ai_honeypot_hits
+      WHERE hit_at > ${since168}
+      GROUP BY source
+      ORDER BY hits DESC LIMIT 50
+  `).map((r) => ({
+    ...r,
+    hits: Number(r.hits || 0),
+  }));
+  const top_paths = getAll(`
+    SELECT path, COUNT(*) AS hits
+      FROM ai_honeypot_hits
+      WHERE hit_at > ${since24} AND path IS NOT NULL AND path <> ''
+      GROUP BY path
+      ORDER BY hits DESC LIMIT 25
+  `).map((r) => ({
+    ...r,
+    hits: Number(r.hits || 0),
+  }));
+  res.json({
+    totals: {
+      hits_all: Number(totals?.hits_all || 0),
+      hits_24h: Number(totals?.hits_24h || 0),
+      hits_7d: Number(totals?.hits_7d || 0),
+      distinct_ips_24h: Number(totals?.distinct_ips_24h || 0),
+      distinct_ips_all: Number(totals?.distinct_ips_all || 0),
+      distinct_sources_seen: Number(totals?.distinct_sources_seen || 0),
+    },
+    by_source,
+    top_paths,
+  });
+});
+
 // ─── Honeypot tab ───────────────────────────────────────────────────────────
 router.get('/honeypot', (req, res) => {
   if (req.query.since || req.query.until) {

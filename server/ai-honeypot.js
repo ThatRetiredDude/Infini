@@ -74,7 +74,7 @@ export function recordHit(req, source) {
     if (req.headers?.[h]) headersExcerpt[h] = String(req.headers[h]).slice(0, 256);
   }
 
-  // eslint-disable-next-line no-console
+   
   console.warn(
     `[honeypot] ${new Date().toISOString()} | src=${source} | ip=${ip} | ${method} ${path} | ua=${ua.slice(0, 80)}`,
   );
@@ -100,7 +100,7 @@ export function recordHit(req, source) {
     );
     hitId = Number(result.lastInsertRowid);
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.error('[honeypot] insert failed:', err?.message || err);
   }
 

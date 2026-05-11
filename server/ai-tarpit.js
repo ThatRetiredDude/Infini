@@ -745,7 +745,7 @@ router.post('/identify', async (req, res) => {
     null;
   const selfIdRaw = JSON.stringify(body).slice(0, 1000);
 
-  // eslint-disable-next-line no-console
+   
   console.warn(`[tarpit-id] ${new Date().toISOString()} | ip=${ip} | raw=${selfIdRaw.slice(0, 200)}`);
 
   const date = todayDateStr();

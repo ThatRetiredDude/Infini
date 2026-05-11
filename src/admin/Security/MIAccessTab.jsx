@@ -33,9 +33,11 @@ export default function MIAccessTab({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, [page, filter]);
+  }, [page, filter, toast]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const flt = (k, v) => { setFilter((f) => ({ ...f, [k]: v })); setPage(1); };
 

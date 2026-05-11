@@ -302,14 +302,14 @@ export function evaluate({ user, route, input, ip, ua, channel, path }) {
           payload: { recent_high_count: recentHighCount, threshold, reasons },
           ip: ip || 'system',
         });
-        // eslint-disable-next-line no-console
+         
         console.warn(
           `[ai-input-guard] Auto-revoked AI access for user ${user?.username || user?.id} (${recentHighCount} HIGH flags)`,
         );
       }
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.error('[ai-input-guard] DB error while persisting flag:', err?.message);
   }
 

@@ -19,5 +19,16 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('@tiptap') || id.includes('prosemirror')) return 'vendor-tiptap';
+          if (id.includes('dompurify')) return 'vendor-dompurify';
+          return undefined;
+        },
+      },
+    },
   },
 });

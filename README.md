@@ -52,7 +52,8 @@ Visit <http://localhost:3000>. All persistent state lives in the `infinipot-data
 │                                                                  │
 │  Node 20 / Express ─────────────────────────────────────────┐    │
 │   ├─ /api/auth/*       local username+password, JWT+cookie  │    │
-│   ├─ /api/blog/*       blog (TipTap HTML, cover images)     │    │
+│   ├─ /api/blog/* + /api/carousel   public surfaces (when visibility allows)  │    │
+│   ├─ /api/site/visibility          page + API gates (home/blog/donations)    │    │
 │   ├─ /api/ai/*         honeypot decoys + tarpit             │    │
 │   ├─ /api/admin/*      admin-gated CRUD + Security Hub      │    │
 │   └─ /api/mi-verify    1×1 access-log beacon                │    │
@@ -81,7 +82,13 @@ The legacy "AI Brief" framework has been repurposed: instead of generating dossi
 
 ## Project status
 
-This is a fresh-from-the-ground rebuild of an earlier project (Maxwell International Archive). The repo is in **Phase 1** — the foundation, auth, single-container packaging, and the bait surface are in place. The honeypot subsystem, blog, admin Security Hub, and AI Log Review are scheduled for Phases 2 – 4. See `_legacy/` (gitignored) for the reference implementation that this repo is being ported from.
+This repo replaces an earlier codebase (historical Maxwell International tooling). Current **shipping** scope:
+
+- SQLite-backed auth, integrations (encrypted credentials), audits, blog + carousel APIs, SPA with page visibility gates.
+- Honeypot decoys (`/api/ai`, standalone scanner URLs), spider trap tarpit (`/api/ai/explore`), access logging (`access_log`), alert rules engine, AI input guard + xAI-driven **AI Log Review**.
+- Docker single-process deployment with persisted `/data` volume.
+
+Older reference material lives in `_legacy/` (often gitignored) when present.
 
 ## Disclaimer
 

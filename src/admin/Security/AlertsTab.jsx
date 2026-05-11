@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from './shared.jsx';
-import ExportShareBar from './ExportShareBar.jsx';
 
 const SOURCES = ['ai_flags', 'mi_access', 'honeypot', 'maze'];
 const CHANNELS = ['email', 'discord', 'telegram', 'webhook'];
@@ -150,7 +149,7 @@ export default function AlertsTab({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => { load(); }, [load]);
 

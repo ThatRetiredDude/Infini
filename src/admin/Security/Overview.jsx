@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API_BASE, countryFlag } from './shared.jsx';
 
 function KpiCard({ label, value, sub, accent, mono }) {
@@ -74,7 +74,7 @@ export default function Overview({ toast }) {
   const [geoData, setGeoData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [ovRes, msRes, geoRes] = await Promise.all([
@@ -94,9 +94,11 @@ export default function Overview({ toast }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <div className="py-8 text-zinc-500 italic text-sm text-center">Loading overview…</div>;
   if (!data) return null;

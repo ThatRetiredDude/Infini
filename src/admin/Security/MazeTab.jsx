@@ -128,7 +128,7 @@ function LiveFeed({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     fetch_();
@@ -242,7 +242,7 @@ function IpDrillDown({ ip, onClose, toast }) {
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch((e) => { toast('error', 'Drill-down error: ' + e.message); setLoading(false); });
-  }, [ip]);
+  }, [ip, toast]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4" onClick={onClose}>
@@ -404,7 +404,7 @@ export default function MazeTab({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, [page, filter]);
+  }, [page, filter, toast]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -418,7 +418,6 @@ export default function MazeTab({ toast }) {
   useEffect(() => { loadStats(); }, [loadStats]);
 
   const flt = (k, v) => { setFilter((f) => ({ ...f, [k]: v })); setPage(1); };
-  const selfIdRows = rows.filter((r) => r.self_id_token);
   const t = stats?.totals || {};
 
   return (

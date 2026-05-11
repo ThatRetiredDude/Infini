@@ -105,7 +105,28 @@ export default function HoneypotTab({ toast }) {
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [expandedId, setExpandedId] = useState(null);
+  const [hpStats, setHpStats] = useState(null);
+  const [hpLures, setHpLures] = useState(null);
   const limit = 100;
+
+  const loadMeta = useCallback(async () => {
+    try {
+      const [statsRes, luresRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/security/honeypot/stats`),
+        fetch(`${API_BASE}/admin/security/lures`),
+      ]);
+      const st = statsRes.ok ? await statsRes.json().catch(() => null) : null;
+      const lu = luresRes.ok ? await luresRes.json().catch(() => null) : null;
+      if (st) setHpStats(st);
+      if (lu?.rows) setHpLures(lu);
+    } catch {
+      /* non-critical */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMeta();
+  }, [loadMeta]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,7 +149,7 @@ export default function HoneypotTab({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, [page, filter]);
+  }, [page, filter, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -146,7 +167,7 @@ export default function HoneypotTab({ toast }) {
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <ExportShareBar rows={rows} filename="decoy-hits" source="honeypot" filters={filter} toast={toast} />
-          <button onClick={load} disabled={loading}
+          <button onClick={() => { loadMeta(); load(); }} disabled={loading}
             className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-sm font-medium transition-colors">
             {loading ? 'Loading…' : 'Refresh'}
           </button>
@@ -169,6 +190,82 @@ export default function HoneypotTab({ toast }) {
           </div>
         ))}
       </div>
+
+      {/* Roll-ups + lure inventory */}
+      {hpStats?.totals && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/40 p-4 space-y-4">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Aggregates</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
+            {[
+              ['All-time hits', hpStats.totals.hits_all],
+              ['24h', hpStats.totals.hits_24h],
+              ['7d', hpStats.totals.hits_7d],
+              ['Distinct IPs (24h)', hpStats.totals.distinct_ips_24h],
+              ['Distinct IPs (all)', hpStats.totals.distinct_ips_all],
+              ['Sources seen', hpStats.totals.distinct_sources_seen],
+            ].map(([label, val]) => (
+              <div key={label} className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                <div className="text-[9px] text-zinc-500 uppercase">{label}</div>
+                <div className="text-lg font-mono font-semibold text-indigo-200">{Number(val || 0).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">By source (7d)</div>
+              <ul className="text-xs space-y-1 max-h-36 overflow-y-auto">
+                {(hpStats.by_source || []).slice(0, 12).map((r) => (
+                  <li key={r.source} className="flex justify-between gap-2 text-zinc-300 border-b border-zinc-800/80 pb-1">
+                    <span className="font-mono truncate">{r.source}</span>
+                    <span className="text-zinc-500 shrink-0">{Number(r.hits).toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">Top paths (24h)</div>
+              <ul className="text-xs space-y-1 max-h-36 overflow-y-auto font-mono">
+                {(hpStats.top_paths || []).slice(0, 10).map((r, i) => (
+                  <li key={i} className="flex justify-between gap-2 text-zinc-400 border-b border-zinc-800/80 pb-1">
+                    <span className="truncate" title={r.path}>{r.path || '—'}</span>
+                    <span className="shrink-0">{Number(r.hits).toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hpLures?.rows && hpLures.rows.length > 0 && (
+        <div className="rounded-xl border border-zinc-700 overflow-hidden">
+          <div className="px-4 py-2 bg-zinc-900 border-b border-zinc-700 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">
+            Mounted lures inventory
+          </div>
+          <div className="max-h-52 overflow-y-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-zinc-900/80 sticky top-0 text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2">Source</th>
+                  <th className="px-3 py-2">Path</th>
+                  <th className="px-3 py-2 text-right">Hits</th>
+                  <th className="px-3 py-2">Last hit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {hpLures.rows.slice(0, 60).map((r) => (
+                  <tr key={r.source} className="text-zinc-300 hover:bg-zinc-900/40">
+                    <td className="px-3 py-1.5 font-mono text-[11px]">{r.source}</td>
+                    <td className="px-3 py-1.5 text-zinc-500 max-w-[200px] truncate" title={r.path}>{r.path}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{Number(r.hits || 0).toLocaleString()}</td>
+                    <td className="px-3 py-1.5 text-zinc-500 whitespace-nowrap">{r.last_hit ? new Date(r.last_hit).toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-700">

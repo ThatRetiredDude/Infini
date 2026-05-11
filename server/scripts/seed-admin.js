@@ -17,13 +17,13 @@ async function main() {
     `SELECT id, username FROM users WHERE role = 'admin' OR is_admin = 1 LIMIT 1`,
   );
   if (existingAdmin) {
-    // eslint-disable-next-line no-console
+     
     console.log(`[seed-admin] admin already exists: ${existingAdmin.username}. Nothing to do.`);
     return;
   }
 
   if (!PASSWORD) {
-    // eslint-disable-next-line no-console
+     
     console.error(
       '[seed-admin] no SEED_ADMIN_PASSWORD set and no admin exists in DB. Set the env var or create an admin manually.',
     );
@@ -37,13 +37,13 @@ async function main() {
     password: PASSWORD,
     role: 'admin',
   });
-  // eslint-disable-next-line no-console
+   
   console.log(`[seed-admin] created admin '${user.username}' (${user.id}).`);
 }
 
 main()
   .catch((err) => {
-    // eslint-disable-next-line no-console
+     
     console.error('[seed-admin] failed:', err);
     process.exitCode = 1;
   })

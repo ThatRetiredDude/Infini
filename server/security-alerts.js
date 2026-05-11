@@ -248,7 +248,7 @@ export async function runAlerts() {
           ok = true;
         } catch (err) {
           errMsg = String(err?.message || err).slice(0, 500);
-          // eslint-disable-next-line no-console
+           
           console.error(`[security-alerts] dispatch failed for "${rule.name}":`, errMsg);
         }
 
@@ -275,12 +275,12 @@ export async function runAlerts() {
           },
           ip: 'system',
         });
-        // eslint-disable-next-line no-console
+         
         console.log(
           `[security-alerts] rule "${rule.name}" fired → channel=${rule.channel}, ok=${ok}`,
         );
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.error(`[security-alerts] error evaluating rule ${rule.id}:`, err?.message);
       }
     }

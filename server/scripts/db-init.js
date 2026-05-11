@@ -8,12 +8,12 @@ import { closeDb } from '../db.js';
 
 try {
   ensureSchema();
-  // eslint-disable-next-line no-console
+   
   console.log('[db-init] schema applied.');
   closeDb();
   process.exit(0);
 } catch (err) {
-  // eslint-disable-next-line no-console
+   
   console.error('[db-init] failed:', err);
   process.exit(1);
 }

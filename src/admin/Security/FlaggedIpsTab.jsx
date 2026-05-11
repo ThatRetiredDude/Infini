@@ -196,7 +196,7 @@ export default function FlaggedIpsTab({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => { load(); }, [load]);
 

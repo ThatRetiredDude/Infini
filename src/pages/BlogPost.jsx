@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { sanitizeBlogHtml } from '../lib/sanitizeBlogHtml.js';
 
 export default function BlogPost({ slug, navigate }) {
   const [post, setPost] = useState(null);
@@ -41,7 +42,7 @@ export default function BlogPost({ slug, navigate }) {
           )}
           <div
             className="text-ink-200 text-sm leading-relaxed space-y-4 [&_a]:text-accent [&_h1]:text-2xl [&_h2]:text-xl [&_ul]:list-disc [&_ul]:pl-5"
-            dangerouslySetInnerHTML={{ __html: post.body || '' }}
+            dangerouslySetInnerHTML={{ __html: sanitizeBlogHtml(post.body || '') }}
           />
           <footer className="mt-12 text-xs text-ink-500 flex flex-wrap gap-4 justify-between border-t border-ink-800 pt-4">
             <span className="font-mono">{post.published_at?.slice?.(0, 16)} UTC</span>

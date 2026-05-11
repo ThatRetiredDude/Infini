@@ -10,7 +10,7 @@
  *   - Alert Rules
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Overview from './Overview.jsx';
 import AIFlagsTab from './AIFlagsTab.jsx';
 import MIAccessTab from './MIAccessTab.jsx';
@@ -32,9 +32,9 @@ const TABS = [
 export default function SecurityHub({ onNavigate, onToast, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
 
-  const toast = (type, text) => {
+  const toast = useCallback((type, text) => {
     if (typeof onToast === 'function') onToast({ type, text });
-  };
+  }, [onToast]);
 
   return (
     <div className="space-y-6">
