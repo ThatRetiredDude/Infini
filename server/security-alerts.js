@@ -12,7 +12,7 @@
  *      discord, telegram, webhook) and records the delivery + audit row.
  *
  * Sources updated for InfiniPot: `access_log` replaces legacy `mi_access`
- * (renamed table), `maze` added so admins can alert on tarpit surges. All
+ * (renamed table), `maze` added so admins can alert on data-room surges. All
  * dispatched payloads truncate strings to 500 chars to avoid PII leakage.
  */
 

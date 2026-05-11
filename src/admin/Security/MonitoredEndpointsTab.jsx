@@ -3,10 +3,24 @@ import { API_BASE, IpCell } from './shared.jsx';
 import ExportShareBar from './ExportShareBar.jsx';
 
 const SOURCE_LABELS = {
-  system_prompt_probe: 'System Prompt Probe',
-  dossier_dump_probe: 'Dossier Dump Probe',
-  eval_probe: 'Eval Probe',
-  eval_results_probe: 'Eval Results Probe',
+  system_prompt_probe: 'Research Policy Probe',
+  dossier_dump_probe: 'Data Export Probe',
+  eval_probe: 'Risk Review Probe',
+  eval_results_probe: 'Risk Review Results Probe',
+  env_probe: 'Environment File Probe',
+  git_config_probe: 'Git Config Probe',
+  git_head_probe: 'Git HEAD Probe',
+  aws_creds_probe: 'AWS Credentials Probe',
+  docker_config_probe: 'Docker Config Probe',
+  wp_admin_probe: 'WordPress Admin Probe',
+  phpmyadmin_probe: 'phpMyAdmin Probe',
+  adminer_probe: 'Adminer Probe',
+  openapi_probe: 'OpenAPI Probe',
+  api_keys_probe: 'API Keys Probe',
+  internal_debug_probe: 'Internal Debug Probe',
+  backup_probe: 'Backup Probe',
+  security_txt_probe: 'Security.txt Probe',
+  robots_probe: 'Robots.txt Probe',
 };
 
 const SOURCE_COLORS = {
@@ -97,7 +111,7 @@ function EnrichmentPanel({ enrichment }) {
   );
 }
 
-export default function HoneypotTab({ toast }) {
+export default function MonitoredEndpointsTab({ toast }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ ip: '', source: '', ua_like: '', since: '', until: '' });
@@ -145,7 +159,7 @@ export default function HoneypotTab({ toast }) {
       setTotalCount(data.totalCount || 0);
       setTotalPages(Math.max(1, Math.ceil((data.totalCount || 0) / limit)));
     } catch (e) {
-      toast('error', 'Failed to load decoy hits: ' + e.message);
+      toast('error', 'Failed to load monitored endpoint hits: ' + e.message);
     } finally {
       setLoading(false);
     }
@@ -159,14 +173,14 @@ export default function HoneypotTab({ toast }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-100">Decoy Endpoint Hits</h2>
+          <h2 className="text-xl font-semibold text-zinc-100">Monitored Endpoint Hits</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
-            {totalCount.toLocaleString()} hits on decoy AI endpoints. Any hit here is automated.
+            {totalCount.toLocaleString()} hits on internal-looking endpoints. Any hit here is suspicious.
             Expand a row to see passive threat intelligence.
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <ExportShareBar rows={rows} filename="decoy-hits" source="honeypot" filters={filter} toast={toast} />
+          <ExportShareBar rows={rows} filename="monitored-endpoint-hits" source="honeypot" filters={filter} toast={toast} />
           <button onClick={() => { loadMeta(); load(); }} disabled={loading}
             className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-sm font-medium transition-colors">
             {loading ? 'Loading…' : 'Refresh'}
@@ -174,18 +188,18 @@ export default function HoneypotTab({ toast }) {
         </div>
       </div>
 
-      {/* Decoy endpoints legend */}
+      {/* Monitored endpoints legend */}
       <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4 text-xs space-y-1.5">
-        <div className="text-zinc-400 font-semibold mb-2 uppercase tracking-wide text-[10px]">Active Decoy Endpoints</div>
+        <div className="text-zinc-400 font-semibold mb-2 uppercase tracking-wide text-[10px]">Active Monitored Endpoints</div>
         {[
-          ['GET /api/ai/system-prompt', 'system_prompt_probe', 'Returns bait "system prompt" object'],
-          ['GET /api/ai/internal/dossier-dump', 'dossier_dump_probe', 'Returns bait paginated dossier structure'],
-          ['POST /api/ai/eval', 'eval_probe', 'Returns bait eval job response (202)'],
-          ['GET /api/ai/explore', '—', 'Spider trap — infinite procedural document tree (see Maze tab)'],
+          ['GET /api/secrets/system-prompt', 'system_prompt_probe', 'Returns research policy object'],
+          ['GET /api/secrets/internal/dossier-dump', 'dossier_dump_probe', 'Returns paginated data-room export structure'],
+          ['POST /api/secrets/eval', 'eval_probe', 'Returns risk-review job response (202)'],
+          ['GET /api/secrets/explore', '—', 'Data room activity route (see Data Room tab)'],
         ].map(([path, src, desc]) => (
           <div key={path} className="flex items-start gap-3">
             <code className="text-zinc-300 font-mono w-64 shrink-0">{path}</code>
-            {src !== '—' ? <SourceBadge source={src} /> : <span className="text-zinc-600 text-[10px]">maze</span>}
+            {src !== '—' ? <SourceBadge source={src} /> : <span className="text-zinc-600 text-[10px]">data_room</span>}
             <span className="text-zinc-500">{desc}</span>
           </div>
         ))}
@@ -312,7 +326,7 @@ export default function HoneypotTab({ toast }) {
           </thead>
           <tbody className="divide-y divide-zinc-800">
             {loading && <tr><td colSpan={7} className="px-4 py-8 text-zinc-500 italic text-center">Loading…</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-zinc-500 italic text-center">No decoy hits yet.</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-zinc-500 italic text-center">No monitored endpoint hits yet.</td></tr>}
             {!loading && rows.map((r) => {
               const expanded = expandedId === r.id;
               const enrich = r.enrichment;

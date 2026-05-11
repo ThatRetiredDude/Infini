@@ -1,19 +1,40 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const apiProxy = {
+  target: 'http://localhost:3000',
+  changeOrigin: true,
+};
+
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/uploads': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
+      '/api': apiProxy,
+      '/uploads': apiProxy,
+
+      // Root-level scanner paths must hit Express in dev too. Without these,
+      // Vite serves the SPA fallback and the monitoring layer never records the hit.
+      '/.env': apiProxy,
+      '/.git': apiProxy,
+      '/.aws': apiProxy,
+      '/.docker': apiProxy,
+      '/.well-known/security.txt': apiProxy,
+      '/wp-admin': apiProxy,
+      '/wp-login.php': apiProxy,
+      '/xmlrpc.php': apiProxy,
+      '/phpmyadmin': apiProxy,
+      '/phpMyAdmin': apiProxy,
+      '/adminer.php': apiProxy,
+      '/adminer': apiProxy,
+      '/openapi.json': apiProxy,
+      '/swagger.json': apiProxy,
+      '/backup.sql': apiProxy,
+      '/dump.sql': apiProxy,
+      '/db_backup.zip': apiProxy,
+      '/backups': apiProxy,
+      '/robots.txt': apiProxy,
     },
   },
   build: {

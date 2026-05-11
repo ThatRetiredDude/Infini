@@ -267,15 +267,15 @@ export default function FlaggedIpsTab({ toast }) {
 
       {!loading && activeSection === 'repeat' && (
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500">IPs seen on 5 or more distinct calendar days across honeypot and maze hits.</p>
-          <IpTable rows={repeatRows} source="maze + honeypot" emptyMsg="No repeat offenders yet." />
+          <p className="text-xs text-zinc-500">IPs seen on 5 or more distinct calendar days across monitored endpoint and data-room activity.</p>
+          <IpTable rows={repeatRows} source="data room + monitored endpoints" emptyMsg="No repeat offenders yet." />
         </div>
       )}
 
       {!loading && activeSection === 'abuse' && (
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">IPs with AbuseIPDB confidence score ≥ 50% from stored enrichment data.</p>
-          <IpTable rows={abuseRows} source="honeypot / maze" emptyMsg="No high-abuse IPs found. Configure AbuseIPDB API key in Integrations to enable scoring." />
+          <IpTable rows={abuseRows} source="monitored endpoints / data room" emptyMsg="No high-abuse IPs found. Configure AbuseIPDB API key in Integrations to enable scoring." />
         </div>
       )}
 

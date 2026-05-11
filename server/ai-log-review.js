@@ -25,14 +25,14 @@ function gatherContext(selection) {
     ? selection.honeypot_ids.map(Number).filter(Number.isFinite)
     : [];
   if (hpIds.length) {
-    summaryKeys.push(`honeypot_ids:${hpIds.length}`);
+    summaryKeys.push(`monitored_endpoint_ids:${hpIds.length}`);
     const ph = inPlaceholders(hpIds);
     const rows = getAll(
       `SELECT id, hit_at, ip, ua, referer, path, method, source, body_excerpt, enrichment
          FROM ai_honeypot_hits WHERE id IN (${ph}) ORDER BY id DESC`,
       hpIds,
     );
-    lines.push('# Honeypot hits');
+    lines.push('# Monitored endpoint hits');
     for (const r of rows) lines.push(JSON.stringify({ table: 'ai_honeypot_hits', ...r }));
   }
 

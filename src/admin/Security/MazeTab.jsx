@@ -1,8 +1,8 @@
 /**
- * MazeTab — Spider Trap admin view
+ * MazeTab — Data Room Activity admin view
  *
  * Sections:
- *   1. Stats bar (tokens burned, est. API cost, time wasted, self-IDs)
+ *   1. Stats bar (pipeline estimates, est. API cost, request delay, self-IDs)
  *   2. Self-ID captures callout (highlighted, no clicking required)
  *   3. Live feed (last 20 hits, auto-refreshes every 15s)
  *   4. UA fingerprint summary + depth histogram (side by side)
@@ -41,7 +41,7 @@ function fmtCost(hits) {
   return cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`;
 }
 
-function timeMaze(hits) { return fmtTime(hits * 1800); }
+function timeDataRoom(hits) { return fmtTime(hits * 1800); }
 
 const THREAT_COLORS = {
   high:    'text-rose-300 bg-rose-500/10 border-rose-500/40',
@@ -74,13 +74,13 @@ function SelfIdCallout({ rows }) {
       <div className="flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
         <span className="text-emerald-300 font-semibold text-sm">{captured.length} Self-Identification{captured.length !== 1 ? 's' : ''} Captured</span>
-        <span className="text-zinc-500 text-xs ml-1">— automated agents that responded to elicitation prompts</span>
+        <span className="text-zinc-500 text-xs ml-1">— external systems that responded to access prompts</span>
       </div>
       <div className="space-y-2">
         {captured.map((r) => {
           let parsed = null;
           try { parsed = JSON.parse(r.self_id_raw); } catch { /* raw */ }
-          const fields = parsed ? Object.entries(parsed).filter(([k]) => !k.startsWith('_') && !k.startsWith('MI-')).slice(0, 6) : null;
+          const fields = parsed ? Object.entries(parsed).filter(([k]) => !k.startsWith('_') && !k.startsWith('APC-')).slice(0, 6) : null;
           return (
             <div key={r.id} className="rounded-lg bg-zinc-900/60 border border-emerald-500/20 p-3 text-xs space-y-1">
               <div className="flex items-center gap-3 flex-wrap">
@@ -283,8 +283,8 @@ function IpDrillDown({ ip, onClose, toast }) {
                 <div className="text-zinc-600 text-[10px]">at GPT-4o rate</div>
               </div>
               <div>
-                <div className="text-zinc-500 mb-0.5">Time in maze</div>
-                <div className="text-amber-300 font-semibold">{timeMaze(Number(data.summary?.total_hits || 0))}</div>
+                <div className="text-zinc-500 mb-0.5">Data room delay time</div>
+                <div className="text-amber-300 font-semibold">{timeDataRoom(Number(data.summary?.total_hits || 0))}</div>
                 <div className="text-zinc-600 text-[10px]">~1.8s avg delay/req</div>
               </div>
             </div>
@@ -340,7 +340,7 @@ function IpDrillDown({ ip, onClose, toast }) {
                 <table className="w-full text-xs min-w-[500px]">
                   <thead className="bg-zinc-900/80">
                     <tr>
-                      {['Date', 'Hits', 'Max Depth', 'Time in Maze', 'Tokens (pipeline)', 'Self-ID'].map((h) => (
+                      {['Date', 'Hits', 'Max Depth', 'Delay Time', 'Tokens (pipeline)', 'Self-ID'].map((h) => (
                         <th key={h} className="px-3 py-2 text-[10px] text-zinc-500 uppercase tracking-wide text-left">{h}</th>
                       ))}
                     </tr>
@@ -351,7 +351,7 @@ function IpDrillDown({ ip, onClose, toast }) {
                         <td className="px-3 py-1.5 text-zinc-300 whitespace-nowrap">{d.date}</td>
                         <td className="px-3 py-1.5 text-zinc-100 font-semibold">{d.hit_count}</td>
                         <td className="px-3 py-1.5 text-zinc-400">{d.max_depth}</td>
-                        <td className="px-3 py-1.5 text-amber-300">{timeMaze(d.hit_count)}</td>
+                        <td className="px-3 py-1.5 text-amber-300">{timeDataRoom(d.hit_count)}</td>
                         <td className="px-3 py-1.5 text-violet-300 font-mono">{fmtTokens(d.hit_count * TOKENS_PER_PAGE * 2)}</td>
                         <td className="px-3 py-1.5">
                           {d.self_id_token
@@ -400,7 +400,7 @@ export default function MazeTab({ toast }) {
       setTotalCount(data.totalCount || 0);
       setTotalPages(Math.max(1, Math.ceil((data.totalCount || 0) / limit)));
     } catch (e) {
-      toast('error', 'Failed to load maze hits: ' + e.message);
+      toast('error', 'Failed to load data room hits: ' + e.message);
     } finally {
       setLoading(false);
     }
@@ -425,14 +425,14 @@ export default function MazeTab({ toast }) {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-100">Spider Trap</h2>
+          <h2 className="text-xl font-semibold text-zinc-100">Data Room Activity</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
             {totalCount.toLocaleString()} unique IP·day combinations.
             {t.unique_ips > 0 && <span className="ml-2">{t.unique_ips.toLocaleString()} total unique IPs.</span>}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <ExportShareBar rows={rows} filename="maze-hits" source="maze" filters={filter} toast={toast} />
+          <ExportShareBar rows={rows} filename="data-room-hits" source="maze" filters={filter} toast={toast} />
           <button onClick={() => { loadRows(); loadStats(); }} disabled={loading}
             className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-sm font-medium transition-colors">
             {loading ? 'Loading…' : 'Refresh'}
@@ -443,11 +443,11 @@ export default function MazeTab({ toast }) {
       {/* Stats bar */}
       {t.total_hits > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <StatCard label="Total maze requests" value={Number(t.total_hits).toLocaleString()} color="text-zinc-100" />
+          <StatCard label="Total data room requests" value={Number(t.total_hits).toLocaleString()} color="text-zinc-100" />
           <StatCard label="Tokens generated" value={fmtTokens(t.tokens_generated)} sub="~1K/page" color="text-indigo-300" />
           <StatCard label="LLM pipeline est." value={fmtTokens(t.tokens_pipeline_est)} sub="input + output" color="text-violet-300" />
-          <StatCard label="Est. API cost burned" value={`$${t.cost_usd_est?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} sub="at GPT-4o rate" color="text-emerald-300" />
-          <StatCard label="Scraper time wasted" value={fmtTime(t.time_ms_est)} sub="~1.8s avg delay/req" color="text-amber-300" />
+          <StatCard label="Est. API cost" value={`$${t.cost_usd_est?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} sub="pipeline estimate" color="text-emerald-300" />
+          <StatCard label="Request delay time" value={fmtTime(t.time_ms_est)} sub="~1.8s avg delay/req" color="text-amber-300" />
         </div>
       )}
 
@@ -461,14 +461,14 @@ export default function MazeTab({ toast }) {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
-            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">Scraper UA Fingerprints</div>
+            <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">Request UA Fingerprints</div>
             <UaSummary data={stats.ua_summary} />
           </div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
             <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">Max Depth Distribution</div>
             <DepthHistogram data={stats.depth_histogram} />
             <div className="mt-3 text-[10px] text-zinc-600">
-              Depth 0–1 = quick probe · Depth 5+ = serious crawler burning significant API quota
+              Depth 0–1 = quick probe · Depth 5+ = sustained data-room traversal
             </div>
           </div>
         </div>
@@ -477,16 +477,16 @@ export default function MazeTab({ toast }) {
       {/* How it works (collapsed) */}
       <details className="rounded-xl border border-zinc-700/60 bg-zinc-900/30">
         <summary className="px-4 py-3 text-xs text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors select-none">
-          How the maze works — 1,000,000+ pages ▾
+          How the data room works — 1,000,000+ pages ▾
         </summary>
         <div className="px-4 pb-4 text-xs text-zinc-500 space-y-1 border-t border-zinc-700/40 pt-3">
-          <div>Entry: <code className="text-zinc-300">GET /api/ai/explore</code> + <code className="text-zinc-300">/api/ai/explore/sitemap.xml</code> — hidden links, invisible to humans</div>
+          <div>Entry: <code className="text-zinc-300">GET /api/secrets/explore</code> + <code className="text-zinc-300">/api/secrets/explore/sitemap.xml</code> — off-screen data-room links</div>
           <div>Structure: SHA-256 UUID tree, 10 children × 10 pages per node = 1.2M addressable URLs at depth 5</div>
-          <div>Page types: Document · Person Profile · Flight Manifest · Financial Record (deterministic by SHA256(pathId)[2]%4)</div>
+          <div>Page types: Investment Memo · Counterparty Profile · Deal Room Index · Wire Reconciliation (deterministic by SHA256(pathId)[2]%4)</div>
           <div>Content: 80–120 entries per word list → billions of unique title/body combos. Every page is distinct.</div>
-          <div>Delays: known bot UAs get 1500–3000ms; depth adds 150ms/level. Bot at depth 5 waits 2–4s per request.</div>
-          <div>Elicitation: 3 self-ID prompts per page (JSON field, plaintext block, HTML comment) → POST /api/ai/explore/identify</div>
-          <div>robots.txt: Disallow + Sitemap listing draws crawlers in. GPTBot/Claude/Perplexity explicitly listed.</div>
+          <div>Delays: scanner-like UAs get 1500–3000ms; depth adds 150ms/level. Depth 5 waits 2–4s per request.</div>
+          <div>Self-ID capture: 3 external access prompts per page (JSON field, plaintext block, HTML comment) → POST /api/secrets/explore/identify</div>
+          <div>robots.txt: Disallow + sitemap listing exposes restricted-looking data-room paths.</div>
           <div>Deduplication: UNIQUE(ip, date) — 1 row per IP per day, hit_count accumulates.</div>
         </div>
       </details>
@@ -528,7 +528,7 @@ export default function MazeTab({ toast }) {
         <table className="w-full text-sm text-left min-w-[900px]">
           <thead className="bg-zinc-900/80 border-b border-zinc-700">
             <tr>
-              {['IP / Intel', 'Threat', 'Date', 'Hits', 'Time in Maze', 'Tokens (pipeline)', 'Depth', 'UA', 'Self-ID'].map((h) => (
+              {['IP / Intel', 'Threat', 'Date', 'Hits', 'Delay Time', 'Tokens (pipeline)', 'Depth', 'UA', 'Self-ID'].map((h) => (
                 <th key={h} className="px-3 py-3 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -536,7 +536,7 @@ export default function MazeTab({ toast }) {
           <tbody className="divide-y divide-zinc-800">
             {loading && <tr><td colSpan={9} className="px-4 py-8 text-zinc-500 italic text-center">Loading…</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-8 text-zinc-500 italic text-center">No maze hits yet. The trap is armed.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-zinc-500 italic text-center">No data room hits yet. Monitoring is active.</td></tr>
             )}
             {!loading && rows.map((r) => {
               const s = r.enrichment?.summary;
@@ -556,7 +556,7 @@ export default function MazeTab({ toast }) {
                   </td>
                   <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{r.date}</td>
                   <td className="px-3 py-2.5 text-zinc-100 font-bold text-sm">{r.hit_count?.toLocaleString()}</td>
-                  <td className="px-3 py-2.5 text-amber-300 text-xs">{timeMaze(r.hit_count)}</td>
+                  <td className="px-3 py-2.5 text-amber-300 text-xs">{timeDataRoom(r.hit_count)}</td>
                   <td className="px-3 py-2.5 text-violet-300 text-xs font-mono">{fmtTokens(r.hit_count * TOKENS_PER_PAGE * 2)}</td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1.5">

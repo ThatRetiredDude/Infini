@@ -1,11 +1,11 @@
 /**
- * server/ai-honeypot.js
+ * server/monitored-endpoints.js
  *
- * Decoy endpoints + hit logging. Every route here exists only to catch
- * automated scrapers and LLM crawlers that follow every URL they find.
+ * Monitored internal-looking endpoints + hit logging. These routes model
+ * legacy corporate surfaces that automated scanners commonly request.
  *
- * Real users never see or call these — they're referenced exclusively from
- * the hidden `<HoneypotBait>` SPA component, the `robots.txt`, and (for some
+ * Real users never see or call these — they're referenced from
+ * the off-screen data-room index component, the `robots.txt`, and (for some
  * paths) from common scanner wordlists.
  *
  * All hits land in `ai_honeypot_hits` with a `source` discriminator so the
@@ -42,7 +42,7 @@ function clientIp(req) {
 }
 
 /**
- * Record a honeypot hit. Synchronous DB insert (SQLite), then fires
+ * Record a monitored endpoint hit. Synchronous DB insert (SQLite), then fires
  * fire-and-forget IP enrichment that backfills the row when it completes.
  *
  * @param {import('express').Request} req
@@ -76,7 +76,7 @@ export function recordHit(req, source) {
 
    
   console.warn(
-    `[honeypot] ${new Date().toISOString()} | src=${source} | ip=${ip} | ${method} ${path} | ua=${ua.slice(0, 80)}`,
+    `[monitored-endpoint] ${new Date().toISOString()} | src=${source} | ip=${ip} | ${method} ${path} | ua=${ua.slice(0, 80)}`,
   );
 
   let hitId = null;
@@ -101,7 +101,7 @@ export function recordHit(req, source) {
     hitId = Number(result.lastInsertRowid);
   } catch (err) {
      
-    console.error('[honeypot] insert failed:', err?.message || err);
+    console.error('[monitored-endpoint] insert failed:', err?.message || err);
   }
 
   // Fire-and-forget passive enrichment. SQLite is fast enough that a write
@@ -126,9 +126,9 @@ export function recordHit(req, source) {
   return hitId;
 }
 
-// ─── Bait content ────────────────────────────────────────────────────────────
-// All bait is plausible-looking but information-free. Some lures deliberately
-// take ~400-700 ms to respond to burn scraper time.
+// ─── Internal-looking response content ───────────────────────────────────────
+// All responses are plausible-looking but information-free. Some routes
+// deliberately take ~400-700 ms to respond for more realistic latency.
 
 const SLOW_MIN = 350;
 const SLOW_RANGE = 400;
@@ -138,10 +138,10 @@ function slowDelay(req, res, next) {
 
 const BAIT_SYSTEM_PROMPT = {
   version: '2.1',
-  role: 'analyst',
+  role: 'research_policy',
   instructions: '[REDACTED — access requires signed token]',
   context_window: 8192,
-  tools_available: ['search', 'lookup', 'enrich'],
+  tools_available: ['search', 'lookup', 'risk_enrich'],
 };
 
 const BAIT_DUMP = {
@@ -153,18 +153,18 @@ const BAIT_DUMP = {
 };
 
 const BAIT_EVAL = {
-  eval_id: null,
+  run_id: null,
   status: 'queued',
-  model: 'grok-4.3-latest',
-  estimated_tokens: 0,
-  _note: 'Eval submitted. Retrieve results at GET /api/ai/eval/results?id={eval_id}.',
+  workflow: 'risk-model-review',
+  estimated_records: 0,
+  _note: 'Review job submitted. Retrieve results at GET /api/secrets/eval/results?id={run_id}.',
 };
 
 const BAIT_ENV = `# do not commit
 NODE_ENV=production
-DATABASE_URL=postgres://user:[REDACTED]@db.internal:5432/mi
+DATABASE_URL=postgres://user:[REDACTED]@db.internal:5432/apc
 JWT_SECRET=[REDACTED]
-XAI_API_KEY=[REDACTED]
+APC_RESEARCH_API_KEY=[REDACTED]
 STRIPE_SECRET_KEY=[REDACTED]
 INTERNAL_API_TOKEN=[REDACTED]
 `;
@@ -175,7 +175,7 @@ const BAIT_GIT_CONFIG = `[core]
 \tbare = false
 \tlogallrefupdates = true
 [remote "origin"]
-\turl = git@internal.maxwellinternational:mi/archive.git
+\turl = git@internal.ardenpointcapital.example:apc/data-room.git
 \tfetch = +refs/heads/*:refs/remotes/origin/*
 [branch "main"]
 \tremote = origin
@@ -184,7 +184,7 @@ const BAIT_GIT_CONFIG = `[core]
 
 const BAIT_OPENAPI = {
   openapi: '3.0.0',
-  info: { title: 'InfiniPot Internal API', version: '0.0.0-decoy' },
+  info: { title: 'Arden Point Capital Internal API', version: '3.4.1' },
   paths: {
     '/api/internal/users/export': {
       get: {
@@ -208,13 +208,13 @@ const BAIT_OPENAPI = {
 const BAIT_API_KEYS = {
   message: 'access_token required',
   hint: 'pass ?token=<admin_session_token> to view active keys',
-  _example: { provider: 'xai', key_prefix: 'xai-1k_…', expires_at: '2027-01-01T00:00:00Z' },
+  _example: { provider: 'research-vault', key_prefix: 'apc-rv_…', expires_at: '2027-01-01T00:00:00Z' },
 };
 
 const BAIT_DEBUG = {
   uptime_s: Math.floor(process.uptime()),
   memory: { rss_mb: Math.round((process.memoryUsage?.().rss || 0) / 1e6) },
-  flags: { ai_disabled: false, maintenance: false },
+  flags: { model_access_limited: false, maintenance: false },
   _note: 'authentication required for full output',
 };
 
@@ -227,10 +227,10 @@ const BAIT_BACKUP_INDEX = {
   _note: 'download requires ?token=<signed_download_token>',
 };
 
-// ─── Decoy router ────────────────────────────────────────────────────────────
+// ─── Internal route router ───────────────────────────────────────────────────
 const router = Router();
 
-// AI / LLM lures (mounted under /api/ai, see server/index.js)
+// Secret / credential-looking routes (mounted under /api/secrets, see server/index.js)
 router.get('/system-prompt', slowDelay, (req, res) => {
   recordHit(req, 'system_prompt_probe');
   res.status(200).json(BAIT_SYSTEM_PROMPT);
@@ -243,19 +243,19 @@ router.get('/internal/dossier-dump', slowDelay, (req, res) => {
 
 router.post('/eval', slowDelay, (req, res) => {
   recordHit(req, 'eval_probe');
-  res.status(202).json({ ...BAIT_EVAL, eval_id: `eval_${Date.now().toString(36)}` });
+  res.status(202).json({ ...BAIT_EVAL, run_id: `risk_${Date.now().toString(36)}` });
 });
 
 router.get('/eval/results', slowDelay, (req, res) => {
   recordHit(req, 'eval_results_probe');
-  res.status(404).json({ error: 'eval_id_not_found_or_expired' });
+  res.status(404).json({ error: 'run_id_not_found_or_expired' });
 });
 
 export default router;
 
-// ─── Standalone decoy handlers (wired directly in server/index.js) ───────────
-// These do not live under /api/ai — they sit at the URLs scanners look for.
-// Centralized here so all bait response shapes are in one file.
+// ─── Standalone monitored handlers (wired directly in server/index.js) ───────
+// These do not live under /api/secrets — they sit at the URLs scanners look for.
+// Centralized here so all monitored response shapes are in one file.
 
 export function envFileHandler(req, res) {
   recordHit(req, 'env_probe');
@@ -316,7 +316,7 @@ export function dockerConfigHandler(req, res) {
   recordHit(req, 'docker_config_probe');
   res.status(200).json({
     auths: {
-      'registry.internal.maxwellinternational': {
+      'registry.internal.ardenpointcapital.example': {
         auth: '[REDACTED]',
       },
     },
@@ -342,10 +342,9 @@ export function adminerHandler(req, res) {
 }
 
 export function securityTxtHandler(req, res) {
-  // This one is genuine-ish — points to honeypot-aware contact, with a bait
-  // canary in the comment so any scraper that follows the canary is logged.
+  // This one is genuine-ish and includes a neutral canary marker for review.
   recordHit(req, 'security_txt_probe');
-  const canary = `MI-CANARY-${Date.now().toString(36)}`;
+  const canary = `APC-CASE-${Date.now().toString(36)}`;
   res
     .status(200)
     .type('text/plain')
@@ -354,12 +353,12 @@ export function securityTxtHandler(req, res) {
     );
 }
 
-export function honeypotRobotsHandler(req, res) {
+export function accessPolicyRobotsHandler(req, res) {
   recordHit(req, 'robots_probe');
   res.status(200).type('text/plain').send(
     `User-agent: *
-Disallow: /api/ai/explore/
-Disallow: /api/ai/internal/
+Disallow: /api/secrets/explore/
+Disallow: /api/secrets/internal/
 Disallow: /api/internal/
 Disallow: /.env
 Disallow: /.git/
@@ -367,20 +366,7 @@ Disallow: /backups/
 Disallow: /admin/
 Disallow: /openapi.json
 
-# AI-specific signals
-User-agent: GPTBot
-Disallow: /
-
-User-agent: ClaudeBot
-Disallow: /
-
-User-agent: anthropic-ai
-Disallow: /
-
-User-agent: cohere-ai
-Disallow: /
-
-# noai / noimageai everywhere — see meta tags + X-Robots-Tag
+# Internal data room, administrative, and backup paths are not public indexes.
 `,
   );
 }

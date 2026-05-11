@@ -8,7 +8,7 @@ export default function Donations() {
       <h1 className="text-2xl mb-2">Support InfiniPot</h1>
       <p className="text-ink-300 mb-8">
         InfiniPot is independently run and self-hosted. Funds keep the blog
-        publishing, the honeypot logging, and the underlying infrastructure
+        publishing, the security telemetry, and the underlying infrastructure
         humming. None of it goes to operating costs we don&apos;t need.
       </p>
 

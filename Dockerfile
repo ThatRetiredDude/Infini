@@ -40,13 +40,12 @@ COPY --from=build --chown=infinipot:infinipot /app/server ./server
 COPY --from=build --chown=infinipot:infinipot /app/package.json ./package.json
 COPY --from=build --chown=infinipot:infinipot /app/index.html ./index.html
 
-# Persisted data location (SQLite + uploads + AI debug log) lives under /data
-RUN mkdir -p /data/uploads /data/logs /data/ai-debug \
+# Persisted data location (SQLite, uploads, and access CSV mirror) lives under /data
+RUN mkdir -p /data/uploads /data/logs \
     && chown -R infinipot:infinipot /data
 
 ENV DATABASE_FILE=/data/infinipot.sqlite
 ENV ACCESS_LOG_CSV_DIR=/data/logs
-ENV AI_DEBUG_LOG_DIR=/data/ai-debug
 
 USER infinipot
 

@@ -2,7 +2,7 @@
  * server/integrations.js
  *
  * Slim integrations module for InfiniPot. Stores encrypted credentials for the
- * services the honeypot + AI Log Review + alerts engine need, and provides
+ * services the monitoring layer + AI Log Review + alerts engine need, and provides
  * `getServiceCredentials(service)` for other modules to read them.
  *
  * Schema lives in `server/schema.js` (table `integration_credentials`).
@@ -62,14 +62,14 @@ export const SERVICE_SCHEMAS = {
     ],
   },
   turnstile: {
-    label: 'Cloudflare Turnstile (challenge for repeat crawlers)',
+    label: 'Cloudflare Turnstile (challenge for repeat data-room visitors)',
     category: 'security',
     fields: [
       { key: 'site_key', label: 'Site Key', type: 'text', secret: false, required: false },
       { key: 'secret_key', label: 'Secret Key', type: 'text', secret: true, required: false },
     ],
     helpText:
-      'When configured, IPs that have hit the Spider Trap 10+ times will be served a Turnstile challenge before getting more bait pages.',
+      'When configured, IPs that have hit the data room 10+ times will be served a Turnstile challenge before getting more data-room pages.',
   },
 
   // ── AI / LLM (used by AI Log Review) ─────────────────────────────────────
@@ -158,7 +158,7 @@ function maskSecret(value) {
   return `${value.slice(0, 4)}${'*'.repeat(Math.min(value.length - 8, 12))}${value.slice(-4)}`;
 }
 
-// ─── Public helper used by ip-enrichment / honeypot / alerts ────────────────
+// ─── Public helper used by ip-enrichment / monitored endpoints / alerts ─────
 /**
  * Returns the decrypted credentials object for a service, or null if the
  * service isn't configured or is disabled. Synchronous (SQLite is sync).

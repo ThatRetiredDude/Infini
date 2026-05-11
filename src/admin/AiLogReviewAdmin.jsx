@@ -86,8 +86,8 @@ export default function AiLogReviewAdmin({ onToast }) {
               onChange={(e) => setReviewType(e.target.value)}
             >
               <option value="mixed">mixed</option>
-              <option value="honeypot">honeypot</option>
-              <option value="maze">maze</option>
+              <option value="honeypot">monitored endpoints</option>
+              <option value="maze">data room</option>
               <option value="access">access</option>
               <option value="ai_flag">ai_flag</option>
               <option value="alert">alert</option>

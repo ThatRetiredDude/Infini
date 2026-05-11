@@ -112,7 +112,7 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
       {section === '' && (
         <div className="grid gap-4 md:grid-cols-2">
           <AdminCard title="Security Hub" onClick={() => navigate('/admin/security')}>
-            Honeypot hits, tarpit / maze analytics, flagged IPs, and alert delivery rules.
+            Monitored endpoint activity, data-room analytics, flagged IPs, and alert delivery rules.
           </AdminCard>
           <AdminCard title="Carousel" onClick={() => navigate('/admin/carousel')}>
             Homepage featured tiles surfaced on the landing page grid.

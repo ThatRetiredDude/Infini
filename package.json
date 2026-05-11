@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "InfiniPot — AI honeypot, tarpit, and blog. Internally Maxwell International (MI).",
+  "description": "InfiniPot — security monitoring, data-room activity review, and blog. Internally Maxwell International (MI).",
   "scripts": {
     "dev": "concurrently -k -n vite,api -c cyan,magenta \"vite\" \"node --watch server/index.js\"",
     "dev:api": "node --watch server/index.js",

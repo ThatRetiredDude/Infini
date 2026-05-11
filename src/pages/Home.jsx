@@ -28,12 +28,11 @@ export default function HomePage({ navigate }) {
           InfiniPot · MI
         </p>
         <h1 className="text-3xl md:text-4xl mb-4">
-          A research blog wrapped around an AI honeypot.
+          A research blog with built-in security telemetry.
         </h1>
         <p className="text-ink-300 mb-6">
-          The visible surface is a blog. The invisible surface is an infinite maze designed to waste the
-          time and compute of automated scrapers and large-language-model agents that scrape without
-          permission. Hits are logged, enriched, and reviewable from the admin Security Hub.
+          The visible surface is a blog. The security layer records suspicious access patterns,
+          enriches network signals, and makes them reviewable from the admin Security Hub.
         </p>
         <div className="flex flex-wrap gap-3">
           <button type="button" className="btn-primary" onClick={() => navigate('/blog')}>

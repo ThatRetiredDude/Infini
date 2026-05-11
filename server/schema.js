@@ -89,7 +89,7 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_access_log_token ON access_log(token)`,
   `CREATE INDEX IF NOT EXISTS idx_access_log_hit_at ON access_log(hit_at DESC)`,
 
-  // ─── ai_honeypot_hits ─────────────────────────────────────────────────────
+  // ─── ai_honeypot_hits (monitored endpoint hits; legacy table name) ───────
   `CREATE TABLE IF NOT EXISTS ai_honeypot_hits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hit_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -109,7 +109,7 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_honeypot_ip ON ai_honeypot_hits(ip, hit_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_honeypot_source ON ai_honeypot_hits(source, hit_at DESC)`,
 
-  // ─── maze_hits (tarpit aggregation, per IP per day) ────────────────────────
+  // ─── maze_hits (data-room aggregation, per IP per day) ─────────────────────
   `CREATE TABLE IF NOT EXISTS maze_hits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ip TEXT NOT NULL,
@@ -161,7 +161,7 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_ai_quota ON ai_quota_log(user_id, feature, created_at DESC)`,
 
   // ─── ai_log_reviews (repurposed entity_briefs) ────────────────────────────
-  // Stores AI-generated reviews of log events / honeypot hits / alerts. The
+  // Stores AI-generated reviews of log events / monitored endpoint hits / alerts. The
   // user picks a set of log rows in the admin UI and the AI returns a
   // structured analysis + suggested actions.
   `CREATE TABLE IF NOT EXISTS ai_log_reviews (

@@ -58,29 +58,29 @@ function RuleForm({ initial, onSave, onCancel, saving }) {
         )}
         {isHp && (
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">Decoy source filter (blank = any)</label>
+            <label className="block text-xs text-zinc-400 mb-1">Monitored endpoint source filter (blank = any)</label>
             <select value={form.predicate.source_type || ''} onChange={(e) => setP('source_type', e.target.value || undefined)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none">
               <option value="">Any</option>
-              <option value="system_prompt_probe">System Prompt Probe</option>
-              <option value="dossier_dump_probe">Dossier Dump Probe</option>
-              <option value="eval_probe">Eval Probe</option>
+              <option value="system_prompt_probe">Research Policy Probe</option>
+              <option value="dossier_dump_probe">Data Export Probe</option>
+              <option value="eval_probe">Risk Review Probe</option>
             </select>
           </div>
         )}
         {isMi && (
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">Honeypot-only hits</label>
+            <label className="block text-xs text-zinc-400 mb-1">Tokenless direct hits</label>
             <select value={form.predicate.token_null === true ? 'true' : ''} onChange={(e) => setP('token_null', e.target.value === 'true' ? true : undefined)}
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none">
               <option value="">All hits</option>
-              <option value="true">Honeypot only (no token)</option>
+              <option value="true">Tokenless only</option>
             </select>
           </div>
         )}
         {isMz && (
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">Spider trap — specific IP (optional)</label>
+            <label className="block text-xs text-zinc-400 mb-1">Data room activity — specific IP (optional)</label>
             <input
               type="text"
               value={form.predicate.ip || ''}

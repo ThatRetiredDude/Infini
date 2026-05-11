@@ -47,7 +47,7 @@ export default function MIAccessTab({ toast }) {
         <div>
           <h2 className="text-xl font-semibold text-zinc-100">MI Access Log</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
-            {totalCount.toLocaleString()} total hits. Rows with no token = honeypot link follower.
+            {totalCount.toLocaleString()} total hits. Rows with no token = direct hidden-link follower.
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -59,7 +59,7 @@ export default function MIAccessTab({ toast }) {
         </div>
       </div>
 
-      {/* Quick-toggle honeypot-only */}
+      {/* Quick-toggle tokenless rows */}
       <div className="flex gap-2">
         <button
           onClick={() => flt('token_null', filter.token_null === 'true' ? '' : 'true')}
@@ -69,7 +69,7 @@ export default function MIAccessTab({ toast }) {
               : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
           }`}
         >
-          Honeypot-only (no token)
+          Tokenless only
         </button>
         <button
           onClick={() => setFilter({ ip: '', ua_like: '', referer_like: '', token_null: '', since: '', until: '' })}
@@ -98,7 +98,7 @@ export default function MIAccessTab({ toast }) {
           <select value={filter.token_null} onChange={(e) => flt('token_null', e.target.value)}
             className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none">
             <option value="">All</option>
-            <option value="true">No token (honeypot)</option>
+            <option value="true">No token (direct follow)</option>
             <option value="false">Has token (SPA load)</option>
           </select>
         </div>

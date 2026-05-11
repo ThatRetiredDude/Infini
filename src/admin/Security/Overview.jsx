@@ -117,22 +117,22 @@ export default function Overview({ toast }) {
         </button>
       </div>
 
-      {/* ── AI flags + honeypot ── */}
+      {/* ── AI flags + monitored endpoints ── */}
       <section>
         <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">AI Abuse Detection</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <KpiCard label="AI Flags (24h)"    value={ai_flags?.flags_24h?.toLocaleString()}  sub={`${ai_flags?.flags_7d?.toLocaleString()} last 7d`} accent="indigo" />
           <KpiCard label="HIGH severity"     value={ai_flags?.high_24h?.toLocaleString()}   sub={`${ai_flags?.medium_24h} medium · ${ai_flags?.low_24h} low`} accent="red" />
-          <KpiCard label="MI Access (24h)"   value={mi_access?.hits_24h?.toLocaleString()}  sub={`${mi_access?.honeypot_24h} honeypot hits`} accent="amber" />
-          <KpiCard label="Decoy Endpoints"   value={honeypot?.hits_24h?.toLocaleString()}   sub={`${honeypot?.hits_7d?.toLocaleString()} last 7d`} accent="red" />
+          <KpiCard label="MI Access (24h)"   value={mi_access?.hits_24h?.toLocaleString()}  sub={`${mi_access?.honeypot_24h} tokenless hits`} accent="amber" />
+          <KpiCard label="Monitored Endpoints"   value={honeypot?.hits_24h?.toLocaleString()}   sub={`${honeypot?.hits_7d?.toLocaleString()} last 7d`} accent="red" />
         </div>
       </section>
 
-      {/* ── Spider trap ── */}
+      {/* ── Data room activity ── */}
       <section>
-        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Spider Trap / Maze</div>
+        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Data Room Activity</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard label="Maze hits today"   value={maze?.hits_today?.toLocaleString()}     sub={`${maze?.hits_7d?.toLocaleString()} last 7d`} accent="violet" />
+          <KpiCard label="Data room hits today"   value={maze?.hits_today?.toLocaleString()}     sub={`${maze?.hits_7d?.toLocaleString()} last 7d`} accent="violet" />
           <KpiCard label="Unique IPs (7d)"   value={maze?.unique_ips_7d?.toLocaleString()}  sub={`${maze?.unique_ips_all?.toLocaleString()} all time`} accent="violet" />
           <KpiCard label="Self-IDs captured" value={maze?.self_ids_all?.toLocaleString()}   sub="operators that identified themselves" accent="green" />
           <KpiCard label="Est. tokens burned" value={fmtTokens(mt.tokens_pipeline_est)}     sub="LLM pipeline estimate (all time)" accent="amber" />
@@ -142,7 +142,7 @@ export default function Overview({ toast }) {
         {mt.total_hits > 0 && (
           <div className="mt-3 rounded-xl border border-zinc-700/60 bg-zinc-900/40 px-5 py-3 flex flex-wrap gap-6 text-xs">
             <div>
-              <span className="text-zinc-500">Total maze requests</span>
+              <span className="text-zinc-500">Total data room requests</span>
               <span className="ml-2 text-zinc-200 font-semibold">{Number(mt.total_hits).toLocaleString()}</span>
             </div>
             <div>
@@ -159,7 +159,7 @@ export default function Overview({ toast }) {
               <span className="ml-1 text-zinc-600">(GPT-4o rate)</span>
             </div>
             <div>
-              <span className="text-zinc-500">Est. scraper time wasted</span>
+              <span className="text-zinc-500">Est. request delay time</span>
               <span className="ml-2 text-amber-300 font-semibold">{fmtTime(mt.time_ms_est)}</span>
             </div>
           </div>
@@ -177,7 +177,7 @@ export default function Overview({ toast }) {
             <Sparkline data={sparklines?.mi_access || []} color="#fb923c" label="MI access hits" />
           </div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
-            <Sparkline data={sparklines?.maze || []} color="#a78bfa" label="Maze page hits" />
+            <Sparkline data={sparklines?.maze || []} color="#a78bfa" label="Data room page hits" />
           </div>
         </div>
       </section>
@@ -200,10 +200,10 @@ export default function Overview({ toast }) {
         </section>
       )}
 
-      {/* ── UA summary from maze stats ── */}
+      {/* ── UA summary from data-room stats ── */}
       {mazeStats?.ua_summary?.length > 0 && (
         <section>
-          <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Scraper Fingerprints (Maze UA Summary)</div>
+          <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Request Fingerprints (Data Room UA Summary)</div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4 space-y-2">
             {mazeStats.ua_summary.map((row) => (
               <div key={row.family} className="flex items-center gap-3">

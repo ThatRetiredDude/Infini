@@ -47,8 +47,8 @@
   }
 }
 
-/* Hidden honeypot bait inherits this — invisible to humans, scrapeable. */
-.mi-bait {
+/* Off-screen index fragment for machine-readable internal references. */
+.dr-index-fragment {
   position: absolute !important;
   left: -10000px !important;
   top: -10000px !important;

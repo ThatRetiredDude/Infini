@@ -14,7 +14,6 @@ services:
       - PORT=3000
       - DATABASE_FILE=/data/infinipot.sqlite
       - ACCESS_LOG_CSV_DIR=/data/logs
-      - AI_DEBUG_LOG_DIR=/data/ai-debug
     volumes:
       - infinipot-data:/data
     healthcheck:

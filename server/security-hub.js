@@ -2,7 +2,7 @@
  * server/security-hub.js
  *
  * Admin-only routes that power the Security Hub UI. All endpoints return
- * filtered + paginated views over the honeypot / tarpit / access / AI-flag
+ * filtered + paginated views over monitored endpoint / data-room / access / AI-flag
  * tables, plus stats rollups, alert-rule CRUD, and the on-demand share
  * helper.
  *
@@ -247,7 +247,7 @@ router.get('/overview/geo', (req, res) => {
   res.json({ countries, asns });
 });
 
-// ─── Honeypot aggregate stats (for Security Hub dashboards) ──────────────────
+// ─── Monitored endpoint aggregate stats (for Security Hub dashboards) ────────
 router.get('/honeypot/stats', (_req, res) => {
   const since24 = sqlHoursAgo(24);
   const since168 = sqlHoursAgo(24 * 7);
@@ -294,7 +294,7 @@ router.get('/honeypot/stats', (_req, res) => {
   });
 });
 
-// ─── Honeypot tab ───────────────────────────────────────────────────────────
+// ─── Monitored endpoints tab ────────────────────────────────────────────────
 router.get('/honeypot', (req, res) => {
   if (req.query.since || req.query.until) {
     const clauses = [];
@@ -345,7 +345,7 @@ function finishHoneypot(req, res, hitClause, baseParams = []) {
   res.json({ rows, total, totalCount: total, limit, offset });
 }
 
-// ─── Maze (tarpit) ─────────────────────────────────────────────────────────
+// ─── Data room activity ────────────────────────────────────────────────────
 router.get('/maze/live', (_req, res) => {
   const rowsRaw = getAll(
     `SELECT ip, ua, date, last_seen, hit_count, max_depth, self_id_token, enrichment
@@ -763,15 +763,15 @@ router.get('/flagged', async (req, res) => {
   }
 });
 
-// ─── Honeypot lure inventory ────────────────────────────────────────────────
+// ─── Monitored endpoint inventory ───────────────────────────────────────────
 router.get('/lures', (_req, res) => {
   // Static manifest of currently-mounted lures + any historical sources we've
   // seen in ai_honeypot_hits. Keeps the admin UI honest about what's deployed.
   const known = [
-    { source: 'system_prompt_probe', path: 'GET /api/ai/system-prompt' },
-    { source: 'dossier_dump_probe', path: 'GET /api/ai/internal/dossier-dump' },
-    { source: 'eval_probe', path: 'POST /api/ai/eval' },
-    { source: 'eval_results_probe', path: 'GET /api/ai/eval/results' },
+    { source: 'system_prompt_probe', path: 'GET /api/secrets/system-prompt' },
+    { source: 'dossier_dump_probe', path: 'GET /api/secrets/internal/dossier-dump' },
+    { source: 'eval_probe', path: 'POST /api/secrets/eval' },
+    { source: 'eval_results_probe', path: 'GET /api/secrets/eval/results' },
     { source: 'env_probe', path: 'GET /.env (+ .local/.production)' },
     { source: 'git_config_probe', path: 'GET /.git/config' },
     { source: 'git_head_probe', path: 'GET /.git/HEAD' },

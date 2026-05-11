@@ -2,7 +2,7 @@
  * server/ai-input-guard.js
  *
  * Server-side input guard for any AI endpoint. The legacy implementation was
- * designed around /api/ai/brief and /api/ai/chat — InfiniPot reuses the same
+ * designed around /api/admin/ai/brief and /api/admin/ai/chat — InfiniPot reuses the same
  * detector for the AI Log Review endpoint and any future LLM-facing route.
  *
  * Three severity tiers:

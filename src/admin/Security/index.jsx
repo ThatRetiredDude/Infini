@@ -4,9 +4,9 @@
  * Unified tabbed admin screen covering:
  *   - Overview (KPIs + sparklines)
  *   - AI Safety Flags
- *   - MI Access Log (traffic + honeypot link)
- *   - AI Honeypot (decoy endpoint hits + IP enrichment)
- *   - Spider Trap / Maze (tarpit with per-IP deduplication + enrichment + self-ID)
+ *   - MI Access Log (traffic + tokenless link follows)
+ *   - Monitored Endpoints (internal-looking endpoint hits + IP enrichment)
+ *   - Data Room Activity (procedural archive access + enrichment + self-ID)
  *   - Alert Rules
  */
 
@@ -14,7 +14,7 @@ import { useState, useCallback } from 'react';
 import Overview from './Overview.jsx';
 import AIFlagsTab from './AIFlagsTab.jsx';
 import MIAccessTab from './MIAccessTab.jsx';
-import HoneypotTab from './HoneypotTab.jsx';
+import MonitoredEndpointsTab from './MonitoredEndpointsTab.jsx';
 import MazeTab from './MazeTab.jsx';
 import FlaggedIpsTab from './FlaggedIpsTab.jsx';
 import AlertsTab from './AlertsTab.jsx';
@@ -23,8 +23,8 @@ const TABS = [
   { id: 'overview',  label: 'Overview' },
   { id: 'ai-flags',  label: 'AI Flags' },
   { id: 'mi-access', label: 'MI Access' },
-  { id: 'honeypot',  label: 'Decoy Endpoints' },
-  { id: 'maze',      label: 'Spider Trap' },
+  { id: 'honeypot',  label: 'Monitored Endpoints' },
+  { id: 'maze',      label: 'Data Room Activity' },
   { id: 'flagged',   label: 'Flagged IPs' },
   { id: 'alerts',    label: 'Alert Rules' },
 ];
@@ -43,7 +43,7 @@ export default function SecurityHub({ onNavigate, onToast, initialTab }) {
         <div>
           <h1 className="text-3xl font-bold text-zinc-100">Security Monitoring</h1>
           <p className="text-zinc-400 mt-1 text-sm">
-            AI abuse detection, MI access & scraping signals, honeypot hits, and alert rules.
+            AI abuse detection, MI access, monitored endpoint activity, and alert rules.
           </p>
         </div>
         <button
@@ -76,7 +76,7 @@ export default function SecurityHub({ onNavigate, onToast, initialTab }) {
         {activeTab === 'overview'  && <Overview toast={toast} />}
         {activeTab === 'ai-flags'  && <AIFlagsTab toast={toast} />}
         {activeTab === 'mi-access' && <MIAccessTab toast={toast} />}
-        {activeTab === 'honeypot'  && <HoneypotTab toast={toast} />}
+        {activeTab === 'honeypot'  && <MonitoredEndpointsTab toast={toast} />}
         {activeTab === 'maze'      && <MazeTab toast={toast} />}
         {activeTab === 'flagged'   && <FlaggedIpsTab toast={toast} />}
         {activeTab === 'alerts'    && <AlertsTab toast={toast} />}
