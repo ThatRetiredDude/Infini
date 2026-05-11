@@ -88,8 +88,6 @@ This repo replaces an earlier codebase (historical Maxwell International tooling
 - Honeypot decoys (`/api/ai`, standalone scanner URLs), spider trap tarpit (`/api/ai/explore`), access logging (`access_log`), alert rules engine, AI input guard + xAI-driven **AI Log Review**.
 - Docker single-process deployment with persisted `/data` volume.
 
-Older reference material lives in `_legacy/` (often gitignored) when present.
-
 ## Disclaimer
 
 InfiniPot is research / educational software. The honeypot layer is designed to discourage unauthorized scraping; it is not a substitute for proper WAF, rate-limiting at the edge, or robots compliance for legitimate user agents. You are responsible for complying with all applicable laws in any deployment.

@@ -40,10 +40,9 @@ pnpm-debug.log*
 *.swo
 .DS_Store
 
-# Reference / legacy source (Maxwell International archive)
+# Misc
 _legacy/
 
-# Misc
 coverage/
 .cache/
 .tmp/

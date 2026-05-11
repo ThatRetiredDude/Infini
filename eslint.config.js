@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   {
-    ignores: ['dist/', 'node_modules/', '_legacy/', 'data/', 'server/scripts/smoke-check.mjs'],
+    ignores: ['dist/', 'node_modules/', 'data/', 'server/scripts/smoke-check.mjs'],
   },
   js.configs.recommended,
   {

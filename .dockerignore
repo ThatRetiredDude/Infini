@@ -13,7 +13,6 @@ logs
 *.sqlite-*
 *.db
 *.db-*
-_legacy
 .vscode
 .idea
 .DS_Store
