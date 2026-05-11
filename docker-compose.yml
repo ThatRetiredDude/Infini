@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  infinipot:
+    build: .
+    container_name: infinipot
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_FILE=/data/infinipot.sqlite
+      - ACCESS_LOG_CSV_DIR=/data/logs
+      - AI_DEBUG_LOG_DIR=/data/ai-debug
+    volumes:
+      - infinipot-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  infinipot-data:
+    driver: local

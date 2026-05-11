@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink-950 text-ink-100 antialiased font-sans;
+    background-image:
+      radial-gradient(ellipse at top, rgba(52, 211, 153, 0.06), transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(244, 63, 94, 0.05), transparent 50%);
+    background-attachment: fixed;
+  }
+  a {
+    @apply text-accent hover:text-accent-glow transition-colors;
+  }
+  h1, h2, h3, h4 {
+    @apply font-semibold text-ink-100;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 font-medium transition-all border;
+  }
+  .btn-primary {
+    @apply btn bg-accent-dim border-accent-dim text-ink-950 hover:bg-accent hover:border-accent;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent border-ink-700 text-ink-100 hover:bg-ink-800 hover:border-ink-600;
+  }
+  .btn-danger {
+    @apply btn bg-danger-dim border-danger-dim text-ink-100 hover:bg-danger hover:border-danger;
+  }
+  .card {
+    @apply rounded-xl border border-ink-700 bg-ink-900/60 backdrop-blur-sm;
+  }
+  .input {
+    @apply w-full rounded-md border border-ink-700 bg-ink-900 px-3 py-2 text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent;
+  }
+  .label {
+    @apply block text-sm font-medium text-ink-200 mb-1;
+  }
+}
+
+/* Hidden honeypot bait inherits this — invisible to humans, scrapeable. */
+.mi-bait {
+  position: absolute !important;
+  left: -10000px !important;
+  top: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
