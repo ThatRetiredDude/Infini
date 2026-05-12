@@ -17,11 +17,13 @@ This applies to **local** `npm run db:seed-admin` and **Docker**, where **`docke
 
 **Troubleshooting:** Use **`COOKIE_SECURE=true`** only behind **HTTPS**; leave **`false`/unset on HTTP** (e.g. `http://localhost` Docker).
 
-- **Docker (`localhost:3000`) uses a different SQLite file than `npm run dev`:** Compose sets **`DATABASE_FILE=/data/infinipot.sqlite`** on the **`infini-data`** volume. Local dev uses **`DATABASE_FILE`** from `.env` (usually **`./data/infinipot.sqlite`** on your machine). Signing in against Docker while you only seeded **`npm run db:seed-admin` on the host** (or the reverse) will fail with **`invalid_credentials`** if those files are not the same database.
+- **Host dev vs Docker use two different SQLite *files*:** [`.env.example`](.env.example) uses **`./data/infini.sqlite`** locally; Compose sets **`DATABASE_FILE=/data/infini.sqlite`** inside the container (on the **`infini-data`** volume). Seeding only on the laptop does not update the container DB (and vice versa). Keep **`DATABASE_FILE`** aligned with [`.env.example`](.env.example) unless you know you need a split.
 
-- If the password should work but **`admin`**’s hash does not match (e.g. old volume), run seed **once** with **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** plus the desired **`SEED_ADMIN_PASSWORD`** (or empty for **`ChangeMeImmediately!`**), restart the container, then **remove** that variable — see [`.env.example`](.env.example).
+- If **`admin`** / the bootstrap password should work but the hash is wrong (old volume), run seed **once** with **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** plus **`SEED_ADMIN_PASSWORD`** (or empty for **`ChangeMeImmediately!`**), restart, then **remove** that variable — see [`.env.example`](.env.example).
 
-- **Check the API response:** `curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"ChangeMeImmediately!"}'` — expect **`invalid_credentials`** if the DB has no **`admin`** row or the bcrypt hash differs; expect **`user`** JSON if OK.
+- **`curl` check:**  
+  `curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"ChangeMeImmediately!"}'`  
+  → **`invalid_credentials`** means no matching user/hash; a JSON **`user`** means the password is fine (then look at cookies / **Set your password**).
 
 ### Local development
 
@@ -62,13 +64,13 @@ On the public Internet, set a strong **`SEED_ADMIN_PASSWORD`**; the documented b
 
 To reinstall from scratch: `docker compose down`, then **`docker volume rm …`** matching your **`…_infini-data`** volume (`docker volume ls`; Compose prefixes by project).
 
-### Migrating from InfiniPot-named deployments
+### Migrating older volumes and SQLite files
 
-If you previously ran Compose with **`infinipot-data`** and **`/data/infinipot.sqlite`**:
+Infini’s **default on-disk database** is **`infini.sqlite`** (path from **`DATABASE_FILE`**: **`./data/infini.sqlite`** in dev, **`/data/infini.sqlite`** in Docker).
 
-1. **Named volume:** Compose now uses **`infini-data`**. Copying data over before switching avoids an empty database — e.g. mount both volumes temporarily or `docker run --rm -v OLD_VOL:/from -v NEW_VOL:/to alpine cp -a /from/. /to/` after creating **`infini-data`** (adjust volume names from `docker volume ls`; prefix is typically `<project>_infini-data`).
-2. **SQLite filename:** The default Compose path inside the volume is **`/data/infinipot.sqlite`**. If you only have **`/data/infini.sqlite`** on an old volume, copy or rename it: e.g. `docker compose exec infini mv /data/infini.sqlite /data/infinipot.sqlite` (stop the stack first if the file is busy), or merge data manually before starting.
-3. **`/api/health`:** The JSON field **`service`** is now **`infini`** (was **`infinipot`**). Update external monitors or scripts that asserted the old value.
+1. **Compose volume:** Older stacks may have used **`infinipot-data`** (InfiniPot era). This repo uses **`infini-data`**. Copy contents between volumes before cutover (see `docker volume ls`; names are often prefixed with the project directory).
+2. **SQLite filename:** If you still have **`infinipot.sqlite`** on the **`/data`** volume (legacy InfiniPot default), rename once with the app stopped, e.g. **`mv /data/infinipot.sqlite /data/infini.sqlite`**, or set **`DATABASE_FILE`** explicitly until you merge data.
+3. **`/api/health`:** **`service`** is **`infini`**. Update external monitors that asserted the previous string.
 
 ### Smoke check (optional)
 
@@ -91,6 +93,17 @@ Infini is a small, opinionated web app with three feature surfaces:
 
 It runs as a **single Docker container** with **SQLite on disk** — no Postgres, no Redis, no separate auth service. Everything you need to run it is in this repo.
 
+### Product vs legacy identifiers
+
+| Area | Name |
+| --- | --- |
+| **Public product** | **Infini** (SPA, `package.json`, `/api/health` → `service: "infini"`) |
+| **Default SQLite file** | **`infini.sqlite`** via **`DATABASE_FILE`** ([`.env.example`](.env.example), Docker **`/data/infini.sqlite`**) |
+| **InfiniPot-era installs** | Rename **`infinipot-data`** / **`infinipot.sqlite`** using [Migrating older volumes](#migrating-older-volumes-and-sqlite-files) above |
+| **Internal MI markers** | Cookie **`mi_session`**, **`/api/mi-verify`**, admin “MI Access” — Maxwell International lineage, kept intentionally |
+
+The SQL table **`ai_honeypot_hits`** uses “honeypot” in the infosec sense; it is not the InfiniPot product name.
+
 ## Architecture
 
 ```
@@ -107,7 +120,7 @@ It runs as a **single Docker container** with **SQLite on disk** — no Postgres
 │   ├─ /api/admin/*        other admin CRUD, Security Hub, …   │    │
 │   └─ /api/mi-verify    1×1 access-log beacon                │    │
 │                                                              │    │
-│  SQLite (better-sqlite3, WAL mode) at /data/infinipot.sqlite │    │
+│  SQLite (better-sqlite3, WAL mode) at /data/infini.sqlite (DATABASE_FILE) │    │
 │  Uploaded blog images at /data/uploads/                     │    │
 │  Access CSV mirror at /data/logs/                           │    │
 └──────────────────────────────────────────────────────────────────┘
