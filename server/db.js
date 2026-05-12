@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_DB_FILE = process.env.DATABASE_FILE
-  || path.resolve(__dirname, '..', 'data', 'infini.sqlite');
+  || path.resolve(__dirname, '..', 'data', 'infinipot.sqlite');
 
 let _db = null;
 

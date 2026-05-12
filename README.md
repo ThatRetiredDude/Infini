@@ -15,7 +15,13 @@ This applies to **local** `npm run db:seed-admin` and **Docker**, where **`docke
 | **Initial password** | **`SEED_ADMIN_PASSWORD`** if set and non-empty in `.env`. If **unset or blank**, **`ChangeMeImmediately!`**. (Stored as bcrypt only.) |
 | **After first sign-in** | Complete **Set your password** in the SPA (**new** password **≥ 12** characters). Until then, **`/admin`** and **`/api/admin/*`** respond **`403`** (`password_change_required`). |
 
-**Troubleshooting:** Use **`COOKIE_SECURE=true`** only behind **HTTPS**; leave **`false`/unset on HTTP** (e.g. `http://localhost` Docker). If **`admin`**’s hash no longer matches the password you expect, run seed **once** with **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** plus the desired **`SEED_ADMIN_PASSWORD`** (or empty for **`ChangeMeImmediately!`**), then **remove** that variable — details in [`.env.example`](.env.example).
+**Troubleshooting:** Use **`COOKIE_SECURE=true`** only behind **HTTPS**; leave **`false`/unset on HTTP** (e.g. `http://localhost` Docker).
+
+- **Docker (`localhost:3000`) uses a different SQLite file than `npm run dev`:** Compose sets **`DATABASE_FILE=/data/infinipot.sqlite`** on the **`infini-data`** volume. Local dev uses **`DATABASE_FILE`** from `.env` (usually **`./data/infinipot.sqlite`** on your machine). Signing in against Docker while you only seeded **`npm run db:seed-admin` on the host** (or the reverse) will fail with **`invalid_credentials`** if those files are not the same database.
+
+- If the password should work but **`admin`**’s hash does not match (e.g. old volume), run seed **once** with **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** plus the desired **`SEED_ADMIN_PASSWORD`** (or empty for **`ChangeMeImmediately!`**), restart the container, then **remove** that variable — see [`.env.example`](.env.example).
+
+- **Check the API response:** `curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"ChangeMeImmediately!"}'` — expect **`invalid_credentials`** if the DB has no **`admin`** row or the bcrypt hash differs; expect **`user`** JSON if OK.
 
 ### Local development
 
@@ -61,7 +67,7 @@ To reinstall from scratch: `docker compose down`, then **`docker volume rm …`*
 If you previously ran Compose with **`infinipot-data`** and **`/data/infinipot.sqlite`**:
 
 1. **Named volume:** Compose now uses **`infini-data`**. Copying data over before switching avoids an empty database — e.g. mount both volumes temporarily or `docker run --rm -v OLD_VOL:/from -v NEW_VOL:/to alpine cp -a /from/. /to/` after creating **`infini-data`** (adjust volume names from `docker volume ls`; prefix is typically `<project>_infini-data`).
-2. **SQLite filename:** Either set **`DATABASE_FILE=/data/infinipot.sqlite`** in `.env` until you **`mv`** the file to **`infini.sqlite`**, or rename once on the volume then use the default **`/data/infini.sqlite`**.
+2. **SQLite filename:** The default Compose path inside the volume is **`/data/infinipot.sqlite`**. If you only have **`/data/infini.sqlite`** on an old volume, copy or rename it: e.g. `docker compose exec infini mv /data/infini.sqlite /data/infinipot.sqlite` (stop the stack first if the file is busy), or merge data manually before starting.
 3. **`/api/health`:** The JSON field **`service`** is now **`infini`** (was **`infinipot`**). Update external monitors or scripts that asserted the old value.
 
 ### Smoke check (optional)
@@ -101,7 +107,7 @@ It runs as a **single Docker container** with **SQLite on disk** — no Postgres
 │   ├─ /api/admin/*        other admin CRUD, Security Hub, …   │    │
 │   └─ /api/mi-verify    1×1 access-log beacon                │    │
 │                                                              │    │
-│  SQLite (better-sqlite3, WAL mode) at /data/infini.sqlite │    │
+│  SQLite (better-sqlite3, WAL mode) at /data/infinipot.sqlite │    │
 │  Uploaded blog images at /data/uploads/                     │    │
 │  Access CSV mirror at /data/logs/                           │    │
 └──────────────────────────────────────────────────────────────────┘

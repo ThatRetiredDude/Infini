@@ -46,7 +46,7 @@ COPY --chmod=755 --chown=infini:infini docker-entrypoint.sh ./docker-entrypoint.
 RUN mkdir -p /data/uploads /data/logs \
     && chown -R infini:infini /data
 
-ENV DATABASE_FILE=/data/infini.sqlite
+ENV DATABASE_FILE=/data/infinipot.sqlite
 ENV ACCESS_LOG_CSV_DIR=/data/logs
 
 USER infini

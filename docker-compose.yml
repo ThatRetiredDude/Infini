@@ -10,7 +10,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_FILE=/data/infini.sqlite
+      - DATABASE_FILE=/data/infinipot.sqlite
       - UPLOADS_DIR=/data/uploads
       - ACCESS_LOG_CSV_DIR=/data/logs
     volumes:
