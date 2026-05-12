@@ -1,172 +1,57 @@
 # Infini
 
-**Self-hosted security monitoring and honeypot-style surfaces** behind a small Node/Express API and SPA. *Work in progress — behavior, APIs, and documentation may change without notice; treat production as experimental.*
+Self-hosted honeypot / monitoring stack (SPA + Express + SQLite). **Work in progress** — behavior and APIs can change; treat production deployments as experimental until you’ve reviewed config.
 
 ## Purpose
 
-Infini is a **research-style honeypot / monitoring stack** in **active development**: decoy and instrumented routes, a data-room-style exploration surface, access logging, enrichment, admin review (Security Hub), and alert delivery. Expect **more surfaces and behavior over time.**
+Decoy and instrumented routes, data-room-style exploration, access logging, enrichment, **Security Hub**, and alerts. Shipped as **one Docker container** with SQLite on disk—no Postgres, no Redis, no separate auth service.
 
-It ships as **one container** with **SQLite on disk** — no Postgres, no Redis, no separate auth service. Everything needed to run it lives in this repo.
+Internally the codename **Maxwell International (MI)** still shows up in tokens (`mi_session`, etc.); the public name is **Infini**.
 
-## Features overview
+## Features (short)
 
-- **Security & monitoring** — Monitored endpoints, procedurally surfaced data-room activity under `/api/secrets/explore/*`, passive enrichment, Security Hub dashboards, configurable alerts, AI-assisted log review, and related admin tooling (see **Detailed overview** below for depth).
-- **Blog** — Optional and casual: Markdown/TipTap posts, drafts/published states, carousel — use it to share yout thoughts to the world or pad the site with nonsense to lure would-be attackers to your site. 
+- **Security & monitoring** — Honeypot-style endpoints, data room, logging, alerts, optional AI log review (details in [docs/architecture.md](docs/architecture.md)).
+- **Blog** — Optional; casual content—or pad the site with nonsense if you want a busier-looking surface.
+- **Public cover** — Donations-style page is shell only, not the point of the project.
 
-**More to come** as development continues.
+More surfaces over time. **Full detail:** [Documentation](docs/README.md).
 
-## How to run
+## How to run (Docker)
 
-**Quick paths**
-
-| | |
-| --- | --- |
-| **Docker** | `cp .env.example .env` → set **`JWT_SECRET`**, **`INTEGRATION_ENCRYPTION_KEY`**, optionally **`SEED_ADMIN_*`** → `docker compose up --build -d` → open `http://localhost:${HOST_PORT:-3000}` |
-| **Local dev** | Same `.env` setup → `npm install` → `npm run db:seed-admin` → `npm run dev` → UI at <http://localhost:5173> (proxies `/api` and `/uploads` to port 3000) |
-
-Details: [Local development](#local-development) · [Docker](#docker-production-like)
-
-### Local development
-
-Requirements: **Node.js 20+** and **npm**.
+For a honeypot on your own machine / lab network:
 
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+git clone https://github.com/ThatRetiredDude/Infini.git
+cd Infini
 cp .env.example .env
 ```
 
-Edit `.env` and set at least `JWT_SECRET` and `INTEGRATION_ENCRYPTION_KEY` (hex instructions are in the file comments).
+Edit `.env` — at minimum set **`JWT_SECRET`** and **`INTEGRATION_ENCRYPTION_KEY`** (see [docs/configuration.md](docs/configuration.md)).
 
 ```bash
-npm install
-npm run db:seed-admin
-npm run dev
+docker compose up -d --build
 ```
 
-**`npm run db:init`** is optional — the schema is applied by **`db:seed-admin`** and on every API boot (`ensureSchema()`). After seed, sign in per **[How to log in](#how-to-log-in)**.
-
-### Docker (production-like)
-
-Image rebuilds do **not** remove data; SQLite and uploads persist in the Compose volume **`infini-data`** (mounted **`/data`**) unless you delete that volume.
-
-Each container start: **`docker-entrypoint.sh`** runs the same admin seed as local dev, then the API (**`tini`** → **`node server/index.js`**).
-
-```bash
-cp .env.example .env   # JWT_SECRET, INTEGRATION_ENCRYPTION_KEY, optional SEED_ADMIN_*
-docker compose up --build -d
-```
-
-Open **`http://localhost:3000`**, or the host port from **`HOST_PORT`** in `.env` ([`docker-compose.yml`](docker-compose.yml)). Sign in per **[How to log in](#how-to-log-in)**.
-
-On the public Internet, set a strong **`SEED_ADMIN_PASSWORD`**; the documented bootstrap is predictable.
-
-To reinstall from scratch: `docker compose down`, then **`docker volume rm …`** matching your **`…_infini-data`** volume (`docker volume ls`; Compose prefixes by project).
-
-### Smoke check (optional)
-
-With the API listening (e.g. `PORT=3000 npm start`):
-
-```bash
-SMOKE_BASE=http://127.0.0.1:3000 npm run smoke
-```
+Open **http://localhost:3000** unless you set **`HOST_PORT`** in `.env` for a port conflict.
 
 ## How to log in
 
-This applies to **local** `npm run db:seed-admin` and **Docker**, where **`docker-entrypoint.sh`** runs the **same seed script** before `node server/index.js`.
-
 | | |
 | --- | --- |
-| **Created when** | The database has **no** admin row yet (`role = admin` or `is_admin`). If one exists, seed **exits quietly** — it does **not** replace users. |
-| **Username** | **`SEED_ADMIN_USERNAME`** from `.env`, default **`admin`**. |
-| **Initial password** | **`SEED_ADMIN_PASSWORD`** if set and non-empty in `.env`. If **unset or blank**, **`ChangeMeImmediately!`**. (Stored as bcrypt only.) |
-| **After first sign-in** | Complete **Set your password** in the SPA (**new** password **≥ 12** characters). Until then, **`/admin`** and **`/api/admin/*`** respond **`403`** (`password_change_required`). |
+| **Bootstrap** | **`admin`** / **`ChangeMeImmediately!`** (include the **`!`**) unless you set **`SEED_ADMIN_PASSWORD`** in `.env`. |
+| **Right after login** | The app forces **Set your password** in the UI. New password must be **at least 12 characters**. Until you finish that step, **`/admin`** and **`/api/admin/*`** return **403** with `password_change_required`. |
 
-### Troubleshooting login
+## Documentation
 
-Use **`COOKIE_SECURE=true`** only behind **HTTPS**; leave **`false`/unset on HTTP** (e.g. `http://localhost` Docker).
+- [Configuration (`env`)](docs/configuration.md)
+- [Architecture & monitoring](docs/architecture.md)
+- [Operations (health, smoke)](docs/operations.md)
+- [Security & deployment (CORS, cookies, proxies)](docs/security-and-deployment.md)
 
-**Host dev vs Docker use two different SQLite *files*:** [`.env.example`](.env.example) uses **`./data/infini.sqlite`** locally; Compose sets **`DATABASE_FILE=/data/infini.sqlite`** inside the container (on the **`infini-data`** volume). Seeding only on the laptop does not update the container DB (and vice versa). Keep **`DATABASE_FILE`** aligned with [`.env.example`](.env.example) unless you know you need a split.
+## Disclaimer
 
-If **`admin`** / the bootstrap password should work but the hash is wrong (old volume), run seed **once** with **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** plus **`SEED_ADMIN_PASSWORD`** (or empty for **`ChangeMeImmediately!`**), restart, then **remove** that variable — see [`.env.example`](.env.example).
+Infini is **research / educational** software—not a complete security or compliance program, and not a substitute for WAFs, edge rate limits, or lawful use policies. **Provided as-is, without warranty of any kind.** You are solely responsible for your deployment and for complying with applicable laws. Authors and contributors are **not liable** for damages or losses arising from use of this software.
 
-**`curl` check:**  
-`curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"ChangeMeImmediately!"}'`  
-→ **`invalid_credentials`** means no matching user/hash; a JSON **`user`** means the password is fine (then look at cookies / **Set your password**).
+## License
 
----
-
-## Detailed overview
-
-### Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                       Infini container                         │
-│                                                                  │
-│  Node 20 / Express ─────────────────────────────────────────┐    │
-│   ├─ /api/auth/*       login, me, change-password; bcrypt; JWT+cookie   │    │
-│   ├─ /api/blog/* + /api/carousel   public surfaces (when visibility allows)  │    │
-│   ├─ /api/site/visibility          page + API gates (home/blog/donations)    │    │
-│   ├─ /api/secrets/explore/*  data room (Turnstile, etc.)    │    │
-│   ├─ /api/secrets/*          monitored decoy endpoints       │    │
-│   ├─ /api/admin/integrations  encrypted integration creds   │    │
-│   ├─ /api/admin/*        other admin CRUD, Security Hub, …   │    │
-│   └─ /api/mi-verify    1×1 access-log beacon                │    │
-│                                                              │    │
-│  SQLite (better-sqlite3, WAL mode) at /data/infini.sqlite (DATABASE_FILE) │    │
-│  Uploaded blog images at /data/uploads/                     │    │
-│  Access CSV mirror at /data/logs/                           │    │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-### Security monitoring layers
-
-| Layer | What | Where logged |
-|---|---|---|
-| **Monitored endpoints** | Internal-looking surfaces (`/api/secrets/system-prompt`, `/api/secrets/internal/dossier-dump`, `/.env`, `/.git/config`, `/wp-admin`, `/api/admin/api-keys`, `/openapi.json`, …) | `ai_honeypot_hits` (with `source` discriminator) |
-| **Data room activity** | Procedurally generated 1M-page Arden Point Capital data-room tree under `/api/secrets/explore/*`, Cloudflare Turnstile-gated for repeat IPs, captures self-identification via `APC-ACCESS-ID:` token | `maze_hits` (per-IP/day aggregated) |
-| **Input guard** | Prompt-injection / SQL / XSS / PII detector on real AI endpoints, auto-revokes AI access after N HIGH hits in 24h | `ai_input_flags` |
-| **Access log** | Every public page load + the hidden `/api/mi-verify` beacon, with per-load token marker | `access_log` |
-| **Alerts engine** | Rule-driven email / Discord / Telegram / webhook deliveries on patterns across the above | `security_alert_rules`, `security_alert_deliveries` |
-
-All hits are passively enriched (ipinfo / AbuseIPDB / GreyNoise) and visible in the admin **Security Hub** with filterable tabs, geo/ASN summaries, repeat-offender derivations, and one-click firewall exports (nginx / iptables / Cloudflare / CIDR).
-
-### AI Log Review
-
-The legacy "AI Brief" framework has been repurposed: instead of generating dossiers, you select log rows / alerts in the Security Hub and get a structured analysis + suggested actions from xAI Grok (default `grok-4.3-latest`, fast fallback `grok-latest`). Settings, request logs, encrypted key storage, and rate limits live in `app_settings` and `integration_credentials`.
-
-### Current scope
-
-This repo replaces an earlier codebase (historical Maxwell International tooling). Current **shipping** scope:
-
-- SQLite-backed auth (bcrypt passwords, documented **`admin`** / **`ChangeMeImmediately!`** bootstrap unless overridden, mandatory first-login **Set your password**; `password_change_required` gates `/api/admin/*`), integrations (encrypted credentials), audits, blog + carousel APIs, SPA with page visibility gates.
-- Monitored endpoints (`/api/secrets`, standalone scanner URLs), data-room activity (`/api/secrets/explore`), access logging (`access_log`), alert rules engine, AI input guard + xAI-driven **AI Log Review**.
-- Docker single-process deployment (`docker-entrypoint.sh` seeds admin once), persisted `/data` volume.
-
-### Migrating older volumes and SQLite files
-
-Infini’s **default on-disk database** is **`infini.sqlite`** (path from **`DATABASE_FILE`**: **`./data/infini.sqlite`** in dev, **`/data/infini.sqlite`** in Docker).
-
-1. **Compose volume:** Older stacks may have used **`infinipot-data`** (InfiniPot era). This repo uses **`infini-data`**. Copy contents between volumes before cutover (see `docker volume ls`; names are often prefixed with the project directory).
-2. **SQLite filename:** If you still have **`infinipot.sqlite`** on the **`/data`** volume (legacy InfiniPot default), rename once with the app stopped, e.g. **`mv /data/infinipot.sqlite /data/infini.sqlite`**, or set **`DATABASE_FILE`** explicitly until you merge data.
-3. **`/api/health`:** **`service`** is **`infini`**. Update external monitors that asserted the previous string.
-
-### Product vs legacy identifiers
-
-| Area | Name |
-| --- | --- |
-| **Public product** | **Infini** (SPA, `package.json`, `/api/health` → `service: "infini"`) |
-| **Default SQLite file** | **`infini.sqlite`** via **`DATABASE_FILE`** ([`.env.example`](.env.example), Docker **`/data/infini.sqlite`**) |
-| **InfiniPot-era installs** | Rename **`infinipot-data`** / **`infinipot.sqlite`** using [Migrating older volumes](#migrating-older-volumes-and-sqlite-files) above |
-| **Internal MI markers** | Cookie **`mi_session`**, **`/api/mi-verify`**, admin “MI Access” — Maxwell International lineage, kept intentionally |
-
-The SQL table **`ai_honeypot_hits`** uses “honeypot” in the infosec sense; it is not the InfiniPot product name.
-
-### Disclaimer
-
-Infini is research / educational software. The security monitoring layer is designed to discourage unauthorized scraping; it is not a substitute for proper WAF, rate-limiting at the edge, or robots compliance for legitimate user agents. You are responsible for complying with all applicable laws in any deployment.
-
-### License
-
-TBD (likely AGPL-3.0 or MPL-2.0 — choose before public release).
+[Apache License 2.0](LICENSE).
