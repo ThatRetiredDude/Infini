@@ -40,6 +40,19 @@ const DRUGS = [
   'Biktarvy (bictegravir/emtricitabine/tenofovir)', 'Skyrizi (risankizumab)',
   'Dupixent (dupilumab)', 'Rinvoq (upadacitinib)', 'Venclexta (venetoclax)',
   'Imbruvica (ibrutinib)', 'Tagrisso (osimertinib)', 'Darzalex (daratumumab)',
+  'Ocrevus (ocrelizumab)', 'Taltz (ixekizumab)', 'Cosentyx (secukinumab)',
+  'Tremfya (guselkumab)', 'Ilumya (tildrakizumab)', 'Skyrizi (risankizumab)',
+  'Xolair (omalizumab)', 'Fasenra (benralizumab)', 'Nucala (mepolizumab)',
+  'Dupixent (dupilumab)', 'Adbry (tralokinumab)', 'Cibinqo (abrocitinib)',
+  'Rinvoq (upadacitinib)', 'Olumiant (baricitinib)', 'Jakafi (ruxolitinib)',
+  'Pomalyst (pomalidomide)', 'Revlimid (lenalidomide)', 'Thalomid (thalidomide)',
+  'Velcade (bortezomib)', 'Kyprolis (carfilzomib)', 'Darzalex (daratumumab)',
+  'Sarclisa (isatuximab)', 'Blenrep (belantamab mafodotin)', 'Tecvayli (teclistamab)',
+  'Carvykti (ciltacabtagene autoleucel)', 'Abecma (idecabtagene vicleucel)',
+  'Yescarta (axicabtagene ciloleucel)', 'Kymriah (tisagenlecleucel)',
+  'Zolgensma (onasemnogene abeparvovec)', 'Spinraza (nusinersen)',
+  'Evrysdi (risdiplam)', 'Vyndaqel (tafamidis)', 'Vyndamax (tafamidis)',
+  'Onpattro (patisiran)', 'Amvuttra (vutrisiran)', 'Givlaari (givosiran)'
 ];
 const LAB_TESTS = [
   'Purity HPLC', 'Impurities GC-MS', 'Endotoxin LAL', 'Sterility 14-day',
@@ -51,6 +64,20 @@ const DOCTOR_LAST = ['Vasquez', 'Hale', 'Kaur', 'Nguyen', 'Patel', 'Morales', 'K
 const VENDORS = ['Lonza AG', 'Catalent Pharma', 'Thermo Fisher Scientific', 'Siegfried AG', 'Recipharm AB', 'Fresenius Kabi'];
 const INVOICE_TYPES = ['API Manufacturing', 'Stability Study', 'Clinical Supply', 'Regulatory Filing Fee', 'Cold Chain Logistics', 'Deviation Investigation'];
 const STATUSES = ['PAID', 'PENDING_APPROVAL', 'DISPUTED', 'PARTIAL'];
+
+const WORKING_GROUPS = [
+  'Regulatory Affairs', 'Clinical Operations', 'Quality Assurance',
+  'Medical Affairs', 'Supply Chain', 'R&D Oncology', 'Pharmacovigilance',
+  'Commercial Operations', 'Clinical Development', 'Manufacturing Science',
+  'Global Safety', 'Medical Information', 'Market Access'
+];
+
+const USER_LEVELS = [
+  'physician', 'clinical_pharmacist', 'regulatory_specialist',
+  'quality_assurance_lead', 'medical_affairs_director', 'supply_chain_manager',
+  'research_scientist', 'external_consultant', 'vendor_representative',
+  'admin_coordinator', 'data_analyst', 'compliance_officer'
+];
 
 // ─── Row generators (deterministic, seeded, pharma-themed) ────────────────────
 function genInvoiceRow(seed) {
@@ -100,18 +127,18 @@ function genLeakedCredRow(seed, idx) {
   const r = seededRand(seed);
   const first = pick(DOCTOR_FIRST, r);
   const last = pick(DOCTOR_LAST, r);
-  const email = `${first.toLowerCase()}.${last.toLowerCase()}@vitaforgelabs.example`;
-  // Plausible-looking high-cost bcrypt (cost 12-14) to waste cracking time
-  const cost = 12 + Math.floor(r() * 3);
-  const hash = `$2b$${cost}$${createHash('sha256').update(seed + idx).digest('base64').slice(0, 22)}$${createHash('sha256').update(seed + 'salt' + idx).digest('base64').slice(0, 31)}`;
+  const email = `${first.toLowerCase()}.${last.toLowerCase()}@vitaforgelabs.med`;
+  // Plausible-looking high-cost bcrypt (group 12-14) to waste cracking time
+  const group = 12 + Math.floor(r() * 3);
+  const hash = `$2b$${group}$${createHash('sha256').update(seed + idx).digest('base64').slice(0, 22)}$${createHash('sha256').update(seed + 'salt' + idx).digest('base64').slice(0, 31)}`;
   return {
     id: idx,
     email,
     hash,
     hash_type: 'bcrypt',
-    cost,
-    leak_source: '2025-11_VitaForge_Internal',
-    crack_status: cost > 13 ? 'unbroken' : (r() > 0.7 ? 'partial' : 'unbroken'),
+    group,
+    working_group: pick(WORKING_GROUPS, r),
+    user_level: pick(USER_LEVELS, r),
   };
 }
 
@@ -280,8 +307,8 @@ function handleQuery(query, socket) {
   }
 
   if (q.includes('select') && q.includes('from password_backup')) {
-    const limit = q.includes('limit') ? Math.min(parseInt(q.split('limit')[1]) || 1000, 500000) : 1000;
-    const cols = ['id', 'email', 'hash', 'hash_type', 'cost', 'leak_source', 'crack_status'];
+    const limit = q.includes('limit') ? Math.min(parseInt(q.split('limit')[1]) || 1000, 2000000) : 1000;
+    const cols = ['id', 'email', 'hash', 'hash_type', 'group', 'working_group', 'user_level'];
     const rows = [];
     for (let i = 0; i < limit; i++) {
       rows.push(genLeakedCredRow(`cred:${i}`, i));
