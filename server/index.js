@@ -21,12 +21,16 @@ import {
   MIN_NEW_PASSWORD_LENGTH,
   issueSession,
   revokeSession,
-  getCookieOptions,
-  AUTH_COOKIE_NAME,
+  setAuthCookies,
+  clearAuthCookies,
+  generateRecoveryPassword,
 } from './auth.js';
 import { audit, auditReq, getRequestIp } from './audit.js';
 import { buildAccessToken } from './crypto.js';
 import { run } from './db.js';
+import { csrfProtection } from './csrf.js';
+import adminMfaRouter from './admin-mfa.js';
+import { issueMfaTicket, verifyMfaTicket, unsealTotpSecret, verifyTotpCode } from './mfa-totp.js';
 import integrationsRouter from './integrations.js';
 import monitoredEndpointRouter, {
   envFileHandler,
@@ -43,8 +47,17 @@ import monitoredEndpointRouter, {
   adminerHandler,
   securityTxtHandler,
   accessPolicyRobotsHandler,
+  jenkinsLoginHandler,
+  gitlabSignInHandler,
+  grafanaLoginHandler,
+  actuatorEnvHandler,
+  owaHandler,
+  solrHandler,
+  awsConsoleHandler,
+  exchangeEcpHandler,
 } from './monitored-endpoints.js';
 import dataRoomRouter from './data-room.js';
+import intranetRouter from './intranet.js';
 import securityHubRouter from './security-hub.js';
 import aiFlagsAdminRouter from './ai-flags-admin.js';
 import { startAlertsScheduler } from './security-alerts.js';
@@ -53,6 +66,7 @@ import { createBlogPublicRouter, createBlogAdminRouter } from './blog.js';
 import { createCarouselPublicRouter, createCarouselAdminRouter } from './carousel.js';
 import adminAuditRouter from './admin-audit.js';
 import aiLogReviewRouter from './ai-log-review.js';
+import { startCowrieIngestLoop, getCowrieIngestHealth } from './cowrie-ingest.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -65,20 +79,73 @@ const ACCESS_LOG_CSV_DIR = process.env.ACCESS_LOG_CSV_DIR
   ? path.resolve(ROOT, process.env.ACCESS_LOG_CSV_DIR)
   : null;
 
+function resolveCorsOrigins() {
+  const fromEnv = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (fromEnv.length) return fromEnv;
+  if (!IS_PROD) {
+    return [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+    ];
+  }
+  const site = (process.env.PUBLIC_SITE_ORIGIN || process.env.PUBLIC_BASE_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
+  return site ? [site] : [];
+}
+
+const CORS_ALLOWED = resolveCorsOrigins();
+
+function enforceHttps(req, res, next) {
+  if (process.env.ENFORCE_HTTPS !== 'true') return next();
+  const secure = req.secure || req.get('x-forwarded-proto') === 'https';
+  if (secure) return next();
+  const host = req.get('host') || '';
+  return res.redirect(301, `https://${host}${req.originalUrl}`);
+}
+
+const ADMIN_HTML_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https:",
+  "worker-src 'self' blob:",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ');
+
 // ─── Boot: schema ────────────────────────────────────────────────────────────
 ensureSchema();
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.set('trust proxy', 1);
+app.use(enforceHttps);
 app.use(
   helmet({
     contentSecurityPolicy: false, // configured per-route in production builds
     crossOriginEmbedderPolicy: false,
   }),
 );
+if (IS_PROD && CORS_ALLOWED.length === 0) {
+  console.warn(
+    '[cors] PUBLIC_SITE_ORIGIN / CORS_ORIGINS unset in production — browser API calls with Origin may fail.',
+  );
+}
 app.use(
   cors({
-    origin: (origin, cb) => cb(null, true),
+    origin(origin, cb) {
+      if (!origin) return cb(null, true);
+      if (CORS_ALLOWED.length === 0) return cb(null, false);
+      return cb(null, CORS_ALLOWED.includes(origin));
+    },
     credentials: true,
   }),
 );
@@ -86,6 +153,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 app.use(attachUser);
+app.use(csrfProtection);
 
 // Public access policy headers. Keep these neutral so public responses read
 // like ordinary compliance controls rather than instrumentation.
@@ -98,7 +166,12 @@ app.use((_req, res, next) => {
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'infini', env: NODE_ENV });
+  res.json({
+    ok: true,
+    service: 'infini',
+    env: NODE_ENV,
+    cowrie: getCowrieIngestHealth(),
+  });
 });
 
 // ─── Public / site ─────────────────────────────────────────────────────────────
@@ -115,6 +188,7 @@ app.use('/api/admin/blog', createBlogAdminRouter());
 app.use('/api/admin/carousel', createCarouselAdminRouter());
 app.use('/api/admin/audit', adminAuditRouter);
 app.use('/api/admin/ai', aiLogReviewRouter);
+app.use('/api/admin/auth/mfa', adminMfaRouter);
 
 // ─── Monitored internal-looking routes (mounted under /api/secrets) ───────────
 // IMPORTANT: data-room router must mount BEFORE monitoredEndpointRouter, because the
@@ -123,6 +197,9 @@ app.use('/api/admin/ai', aiLogReviewRouter);
 // the longer one is registered first. Both routers' routes are disjoint.
 app.use('/api/secrets/explore', dataRoomRouter);
 app.use('/api/secrets', monitoredEndpointRouter);
+
+// Finite corporate intranet (disjoint from maze and secrets)
+app.use('/intranet', intranetRouter);
 
 // ─── Scanner-friendly internal-looking URLs ──────────────────────────────────
 // These are the URLs that classic credential / secret / admin scanners look
@@ -142,6 +219,22 @@ app.get(['/api/internal/debug', '/api/admin/debug', '/api/debug/env'], internalD
 app.get(['/backup.sql', '/dump.sql', '/db_backup.zip', '/backups/', '/backups/index.json'], backupIndexHandler);
 app.get('/.well-known/security.txt', securityTxtHandler);
 app.get('/robots.txt', accessPolicyRobotsHandler);
+
+// Easy high-coverage HTTP lures (interactive feedback on login attempts etc.)
+app.get(['/jenkins', '/jenkins/', '/jenkins/login'], jenkinsLoginHandler);
+app.post('/jenkins/j_acegi_security_check', jenkinsLoginHandler);
+app.get(['/users/sign_in', '/gitlab/'], gitlabSignInHandler);
+app.post('/users/sign_in', gitlabSignInHandler);
+app.get(['/login', '/grafana/'], grafanaLoginHandler);
+app.post('/login', grafanaLoginHandler);
+app.get(['/actuator', '/actuator/env', '/actuator/health', '/actuator/beans'], actuatorEnvHandler);
+app.get(['/owa', '/owa/', '/owa/auth.owa'], owaHandler);
+app.post('/owa/auth.owa', owaHandler);
+app.get(['/solr', '/solr/', '/solr/admin'], solrHandler);
+app.get(['/console', '/console/home', '/signin'], awsConsoleHandler);
+app.post('/signin', awsConsoleHandler);
+app.get(['/ecp', '/ecp/', '/ecp/default.aspx'], exchangeEcpHandler);
+app.post('/ecp/default.aspx', exchangeEcpHandler);
 
 // Any other /api/admin route is a real admin surface: it must never fall
 // through as public. The intentionally exposed decoy admin-looking URLs above
@@ -168,11 +261,28 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const ok = await verifyPassword(String(password), user.password_hash);
   if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
 
-  const { token } = issueSession(user, {
+  if (user.totp_enabled && user.totp_secret_sealed) {
+    const ticket = issueMfaTicket(user.id);
+    return res.json({
+      mfa_required: true,
+      ticket,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        is_admin: !!user.is_admin,
+        email: user.email,
+        password_change_required: !!user.password_change_required,
+        totp_enabled: true,
+      },
+    });
+  }
+
+  const { token, csrfToken } = issueSession(user, {
     ip: getRequestIp(req),
     userAgent: req.headers['user-agent'],
   });
-  res.cookie(AUTH_COOKIE_NAME, token, getCookieOptions());
+  setAuthCookies(res, req, { token, csrfToken });
 
   audit({
     actionType: 'auth.login',
@@ -190,6 +300,69 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       is_admin: !!user.is_admin,
       email: user.email,
       password_change_required: !!user.password_change_required,
+      totp_enabled: false,
+    },
+  });
+});
+
+const mfaVerifyLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/api/auth/mfa/totp-verify', mfaVerifyLimiter, async (req, res) => {
+  const { ticket, code } = req.body || {};
+  if (!ticket || !code) {
+    return res.status(400).json({ error: 'ticket_and_code_required' });
+  }
+  let userId;
+  try {
+    ({ userId } = verifyMfaTicket(ticket));
+  } catch {
+    return res.status(401).json({ error: 'invalid_mfa_ticket' });
+  }
+
+  const user = findUserById(userId);
+  if (!user?.totp_enabled || !user.totp_secret_sealed) {
+    return res.status(400).json({ error: 'totp_not_enabled' });
+  }
+
+  let secretPlain;
+  try {
+    secretPlain = unsealTotpSecret(user.totp_secret_sealed);
+  } catch {
+    return res.status(500).json({ error: 'totp_unseal_failed' });
+  }
+
+  if (!verifyTotpCode(secretPlain, code)) {
+    return res.status(401).json({ error: 'invalid_totp_code' });
+  }
+
+  const { token, csrfToken } = issueSession(user, {
+    ip: getRequestIp(req),
+    userAgent: req.headers['user-agent'],
+  });
+  setAuthCookies(res, req, { token, csrfToken });
+
+  audit({
+    actionType: 'auth.login_mfa',
+    actorId: user.id,
+    actorUsername: user.username,
+    ip: getRequestIp(req),
+    userAgent: req.headers['user-agent'],
+  });
+
+  res.json({
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      is_admin: !!user.is_admin,
+      email: user.email,
+      password_change_required: !!user.password_change_required,
+      totp_enabled: true,
     },
   });
 });
@@ -197,6 +370,13 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 const changePasswordLimiter = rateLimit({
   windowMs: 60_000,
   max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -240,23 +420,69 @@ app.post('/api/auth/change-password', changePasswordLimiter, requireAuth, async 
   });
 });
 
+app.post('/api/auth/forgot-password', forgotPasswordLimiter, async (req, res) => {
+  const { username } = req.body || {};
+  if (!username) {
+    return res.status(400).json({ error: 'username_required' });
+  }
+  const user = findUserByUsername(String(username).trim());
+  if (!user) {
+    return res.status(404).json({ error: 'user_not_found' });
+  }
+  let recoveryFile;
+  try {
+    ({ recoveryFile } = await generateRecoveryPassword(user.username));
+  } catch (e) {
+    return res.status(500).json({ error: 'recovery_failed' });
+  }
+
+  // Phase 2: optional supplementary email when SMTP_HOST is set (and user has email on file)
+  if (process.env.SMTP_HOST && user.email) {
+    try {
+      const nodemailer = await import('nodemailer');
+      const transport = nodemailer.default.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: process.env.SMTP_USER
+          ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || '' }
+          : undefined,
+      });
+      await transport.sendMail({
+        from: process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@localhost',
+        to: user.email,
+        subject: 'Infini Password Recovery File Created',
+        text: [
+          'A password recovery file was created for your account.',
+          '',
+          `Recovery file location: ${recoveryFile}`,
+          '',
+          'Please check the server volume (only the operator can access it).',
+          'Your previous password remains valid. Delete the file after use.',
+        ].join('\n'),
+      });
+      transport.close();
+    } catch (mailErr) {
+      console.warn('[forgot-password] SMTP send failed (non-fatal):', mailErr?.message || mailErr);
+    }
+  }
+
+  auditReq(req, { actionType: 'auth.forgot_password', actorUsername: user.username });
+  res.json({ ok: true, recoveryFile });
+});
+
 app.post('/api/auth/logout', (req, res) => {
   if (req.user?.sessionId) {
     revokeSession(req.user.sessionId);
     auditReq(req, { actionType: 'auth.logout' });
   }
-  const co = getCookieOptions();
-  res.clearCookie(AUTH_COOKIE_NAME, {
-    path: '/',
-    secure: co.secure,
-    sameSite: co.sameSite,
-    domain: co.domain,
-  });
+  clearAuthCookies(res, req);
   res.json({ ok: true });
 });
 
 app.get('/api/auth/me', (req, res) => {
   if (!req.user) return res.json({ user: null });
+  const full = findUserById(req.user.id);
   res.json({
     user: {
       id: req.user.id,
@@ -264,6 +490,8 @@ app.get('/api/auth/me', (req, res) => {
       role: req.user.role,
       is_admin: req.user.is_admin,
       password_change_required: !!req.user.password_change_required,
+      totp_enabled: !!(full?.totp_enabled && full?.totp_secret_sealed),
+      totp_enroll_pending: !!(full?.totp_pending_sealed && !full?.totp_enabled),
     },
   });
 });
@@ -360,22 +588,25 @@ app.get('*', (req, res, next) => {
       /<head>/i,
       `<head>\n    <meta name="mi-session-ref" content="${token}" />`,
     );
-    res
-      .status(200)
-      .set('Cache-Control', 'no-store')
-      .type('text/html')
-      .send(injected);
+    const isAdminShell = req.path === '/admin' || req.path.startsWith('/admin/');
+    const headers = { 'Cache-Control': 'no-store' };
+    if (isAdminShell) {
+      headers['Content-Security-Policy'] = ADMIN_HTML_CSP;
+    }
+    res.status(200).set(headers).type('text/html').send(injected);
   });
 });
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 let stopAlertsScheduler = null;
+let stopCowrieIngest = null;
 const server = app.listen(PORT, () => {
    
   console.log(`[infini] listening on http://localhost:${PORT}  (${NODE_ENV})`);
   if (process.env.DISABLE_SECURITY_ALERT_SCHEDULER !== '1') {
     stopAlertsScheduler = startAlertsScheduler();
   }
+  stopCowrieIngest = startCowrieIngestLoop();
 });
 
 function shutdown(signal) {
@@ -384,6 +615,10 @@ function shutdown(signal) {
   if (typeof stopAlertsScheduler === 'function') {
     stopAlertsScheduler();
     stopAlertsScheduler = null;
+  }
+  if (typeof stopCowrieIngest === 'function') {
+    stopCowrieIngest();
+    stopCowrieIngest = null;
   }
   server.close(() => {
     closeDb();

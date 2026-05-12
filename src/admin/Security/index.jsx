@@ -3,14 +3,14 @@
  *
  * Unified tabbed admin screen covering:
  *   - Overview (KPIs + sparklines)
- *   - AI Safety Flags
+ *   - Globe (3D traffic view + filtered spreadsheet)
  *   - MI Access Log (traffic + tokenless link follows)
  *   - Monitored Endpoints (internal-looking endpoint hits + IP enrichment)
  *   - Data Room Activity (procedural archive access + enrichment + self-ID)
  *   - Alert Rules
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Overview from './Overview.jsx';
 import AIFlagsTab from './AIFlagsTab.jsx';
 import MIAccessTab from './MIAccessTab.jsx';
@@ -19,18 +19,45 @@ import MazeTab from './MazeTab.jsx';
 import FlaggedIpsTab from './FlaggedIpsTab.jsx';
 import AlertsTab from './AlertsTab.jsx';
 
+import GlobeViewTab from './GlobeViewTab.jsx';
+import MfaAdminTab from './MfaAdminTab.jsx';
+
+import NetworkSensorsTab from './NetworkSensorsTab.jsx';
+
 const TABS = [
-  { id: 'overview',  label: 'Overview' },
-  { id: 'ai-flags',  label: 'AI Flags' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'globe', label: 'Globe' },
+  { id: 'ai-flags', label: 'AI Flags' },
   { id: 'mi-access', label: 'MI Access' },
   { id: 'honeypot',  label: 'Monitored Endpoints' },
+  { id: 'network',   label: 'Network sensor' },
   { id: 'maze',      label: 'Data Room Activity' },
   { id: 'flagged',   label: 'Flagged IPs' },
   { id: 'alerts',    label: 'Alert Rules' },
+  { id: 'mfa',       label: '2FA' },
 ];
 
 export default function SecurityHub({ onNavigate, onToast, initialTab }) {
-  const [activeTab, setActiveTab] = useState(initialTab || 'overview');
+  const validInitial =
+    initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'overview';
+  const [activeTab, setActiveTab] = useState(validInitial);
+
+  useEffect(() => {
+    if (!initialTab) {
+      setActiveTab('overview');
+      return;
+    }
+    if (TABS.some((t) => t.id === initialTab)) setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const selectTab = useCallback(
+    (id) => {
+      setActiveTab(id);
+      if (id === 'overview') onNavigate('/admin/security');
+      else onNavigate(`/admin/security/${id}`);
+    },
+    [onNavigate],
+  );
 
   const toast = useCallback((type, text) => {
     if (typeof onToast === 'function') onToast({ type, text });
@@ -59,7 +86,7 @@ export default function SecurityHub({ onNavigate, onToast, initialTab }) {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => setActiveTab(t.id)}
+            onClick={() => selectTab(t.id)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
               activeTab === t.id
                 ? 'border-indigo-500 text-indigo-300'
@@ -73,13 +100,16 @@ export default function SecurityHub({ onNavigate, onToast, initialTab }) {
 
       {/* Tab content */}
       <div>
-        {activeTab === 'overview'  && <Overview toast={toast} />}
-        {activeTab === 'ai-flags'  && <AIFlagsTab toast={toast} />}
+        {activeTab === 'overview' && <Overview toast={toast} />}
+        {activeTab === 'globe' && <GlobeViewTab toast={toast} />}
+        {activeTab === 'ai-flags' && <AIFlagsTab toast={toast} />}
         {activeTab === 'mi-access' && <MIAccessTab toast={toast} />}
         {activeTab === 'honeypot'  && <MonitoredEndpointsTab toast={toast} />}
+        {activeTab === 'network'   && <NetworkSensorsTab toast={toast} />}
         {activeTab === 'maze'      && <MazeTab toast={toast} />}
         {activeTab === 'flagged'   && <FlaggedIpsTab toast={toast} />}
         {activeTab === 'alerts'    && <AlertsTab toast={toast} />}
+        {activeTab === 'mfa'       && <MfaAdminTab toast={toast} />}
       </div>
     </div>
   );

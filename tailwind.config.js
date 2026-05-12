@@ -18,9 +18,9 @@ export default {
           100: '#e6eaef',
         },
         accent: {
-          DEFAULT: '#34d399',
-          dim: '#10b981',
-          glow: '#6ee7b7',
+          DEFAULT: 'var(--accent, #34d399)',
+          dim: 'var(--accent-dim, #10b981)',
+          glow: 'var(--accent-glow, #6ee7b7)',
         },
         danger: {
           DEFAULT: '#f43f5e',

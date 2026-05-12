@@ -10,7 +10,7 @@ const checks = [
   {
     path: '/api/health',
     expectStatus: 200,
-    expectJson: (j) => j?.ok === true && j?.service === 'infini',
+    expectJson: (j) => j?.ok === true && j?.service === 'infini' && typeof j?.cowrie === 'object',
   },
   {
     path: '/api/site/visibility',

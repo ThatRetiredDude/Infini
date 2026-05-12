@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE, SeverityBadge, ActionBadge, ReasonChips, DisabledUsersPanel } from './shared.jsx';
 import ExportShareBar from './ExportShareBar.jsx';
+import { fetchWithCsrf } from '../../lib/api.js';
 
 export default function AIFlagsTab({ toast }) {
   const [flags, setFlags] = useState([]);
@@ -26,7 +27,7 @@ export default function AIFlagsTab({ toast }) {
       if (filter.ip) params.set('ip', filter.ip);
       if (filter.date_from) params.set('date_from', filter.date_from);
       if (filter.date_to) params.set('date_to', filter.date_to);
-      const res = await fetch(`${API_BASE}/admin/security/ai-flags?${params}`);
+      const res = await fetchWithCsrf(`${API_BASE}/admin/security/ai-flags?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load');
       setFlags(data.flags || []);
@@ -47,7 +48,7 @@ export default function AIFlagsTab({ toast }) {
     if (reason === null) return;
     setDisabling(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/ai-flags/users/${userId}/disable`, {
+      const res = await fetchWithCsrf(`${API_BASE}/admin/ai-flags/users/${userId}/disable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: reason || 'Manually disabled by admin' }),

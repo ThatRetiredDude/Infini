@@ -1,6 +1,6 @@
 # Architecture
 
-Single-process **Node 20** + **Express**. Static SPA from `dist/` after build; SQLite via **better-sqlite3** (WAL). No separate database or cache service.
+Single-process **Node 20** + **Express**, optionally **Cowrie** (background TCP honeypot in the same container when enabled). Static SPA from `dist/` after build; SQLite via **better-sqlite3** (WAL). No separate database or cache service.
 
 ## Diagram
 
@@ -9,7 +9,7 @@ Single-process **Node 20** + **Express**. Static SPA from `dist/` after build; S
 │                  Infini container (Docker image)                 │
 │                                                                   │
 │  Express ─────────────────────────────────────────────────────┐   │
-│   ├─ /api/health        liveness JSON (service: infini)       │   │
+│   ├─ /api/health        liveness JSON + optional cowrie meta   │   │
 │   ├─ /api/auth/*        login, logout, me, change-password     │   │
 │   ├─ /api/blog/* + /api/carousel   public (visibility-gated)    │   │
 │   ├─ /api/site/visibility         page + API gates               │   │
@@ -21,6 +21,8 @@ Single-process **Node 20** + **Express**. Static SPA from `dist/` after build; S
 │   └─ /api/mi-verify              1×1 access-log beacon           │   │
 │                                                                 │   │
 │  *Tor: cached bulk exit list (Tor Project) for Security Hub UX   │   │
+│                                                                   │
+│  Optional: Cowrie (SSH/Telnet) honeypot → JSON log → ingest → SQLite   │
 │                                                                   │
 │  SQLite at DATABASE_FILE (default /data/infini.sqlite in Docker) │
 │  Blog uploads under UPLOADS_DIR (default /data/uploads/)          │
@@ -38,7 +40,8 @@ For background on **Tor feed** caching, see [`server/tor-feed.js`](../server/tor
 
 | Layer | What | Where logged |
 |---|---|---|
-| **Monitored endpoints** | Internal-looking surfaces (`/api/secrets/system-prompt`, `/api/secrets/internal/dossier-dump`, `/.env`, `/.git/config`, `/wp-admin`, `/api/admin/api-keys`, `/openapi.json`, …) | `ai_honeypot_hits` (with `source` discriminator) |
+| **Network sensor (Cowrie)** | Optional TCP honeypot (GPL-2.0); events from Cowrie JSON log | `network_sensor_events` |
+| **Monitored endpoints** | Internal-looking surfaces (`/api/secrets/system-prompt`, `/api/secrets/internal/dossier-dump`, `/.env`, `/.git/config`, `/wp-admin`, Jenkins, Grafana, Actuator, OWA, Solr, `/intranet/*`, …) | `ai_honeypot_hits` (with `source` discriminator) |
 | **Data room activity** | Procedurally generated 1M-page Arden Point Capital data-room tree under `/api/secrets/explore/*`, Cloudflare Turnstile-gated for repeat IPs, self-identification via `APC-ACCESS-ID:` token | `maze_hits` (per-IP/day aggregated) |
 | **Input guard** | Prompt-injection / SQL / XSS / PII detector on real AI endpoints; auto-revokes AI access after N HIGH hits in 24h | `ai_input_flags` |
 | **Access log** | Public page loads + hidden `/api/mi-verify` beacon, per-load token | `access_log` |

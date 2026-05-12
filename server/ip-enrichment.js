@@ -67,11 +67,23 @@ async function queryIpInfo(ip) {
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
     const j = await res.json();
+    let latitude = null;
+    let longitude = null;
+    if (j.loc && typeof j.loc === 'string') {
+      const [la, lo] = j.loc.split(',').map((x) => parseFloat(String(x).trim()));
+      if (Number.isFinite(la) && Number.isFinite(lo)) {
+        latitude = la;
+        longitude = lo;
+      }
+    }
     return {
       country: j.country || null,
       region: j.region || null,
       city: j.city || null,
       org: j.org || null,
+      loc: j.loc || null,
+      latitude,
+      longitude,
       asn: (j.org || '').split(' ')[0] || null,
       hostname: j.hostname || null,
       is_hosting:

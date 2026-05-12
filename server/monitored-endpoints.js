@@ -227,6 +227,42 @@ const BAIT_BACKUP_INDEX = {
   _note: 'download requires ?token=<signed_download_token>',
 };
 
+// ─── Easy HTTP lures (Jenkins, GitLab, Grafana, Actuator, OWA, Solr, AWS, ECP) ──
+// Each provides realistic interactive feedback: login forms accept POST and reply
+// with plausible error pages; JSON endpoints return structured data.
+
+const BAIT_JENKINS = `<!doctype html><html><head><title>Sign in [Jenkins]</title><meta name="viewport" content="width=device-width"></head><body style="font-family:monospace"><h1>Jenkins</h1><form action="/jenkins/j_acegi_security_check" method="post"><input name="j_username" placeholder="Username"><input type="password" name="j_password" placeholder="Password"><button type="submit">Sign in</button></form><p style="color:#888">Forgot password? Contact admin@internal.example</p></body></html>`;
+
+const BAIT_GITLAB = `<!doctype html><html><head><title>Sign in · GitLab</title></head><body><h2>GitLab</h2><form action="/users/sign_in" method="post"><input name="user[login]" placeholder="Username or email"><input type="password" name="user[password]"><button>Sign in</button></form></body></html>`;
+
+const BAIT_GRAFANA = `<!doctype html><html><head><title>Grafana</title></head><body style="background:#111;color:#ddd"><h1>Grafana</h1><form action="/login" method="post"><input name="user" placeholder="email or username"><input type="password" name="password"><button>Log in</button></form><p>Default admin / admin</p></body></html>`;
+
+const BAIT_ACTUATOR = {
+  _links: {
+    self: { href: '/actuator' },
+    env: { href: '/actuator/env' },
+    health: { href: '/actuator/health' },
+    beans: { href: '/actuator/beans' },
+  },
+  app: { name: 'research-api', version: '4.2.1' },
+};
+
+const BAIT_ACTUATOR_ENV = {
+  activeProfiles: ['prod', 'secrets'],
+  propertySources: [
+    { name: 'systemEnvironment', properties: { DATABASE_URL: 'postgres://[REDACTED]@db.internal:5432/apc' } },
+    { name: 'applicationConfig', properties: { 'spring.datasource.password': '[REDACTED]' } },
+  ],
+};
+
+const BAIT_OWA = `<!doctype html><html><head><title>Outlook Web App</title></head><body><form action="/owa/auth.owa" method="post"><input name="username"><input type="password" name="password"><button>Sign in</button></form><p>Secure access for Arden Point Capital staff only.</p></body></html>`;
+
+const BAIT_SOLR = { responseHeader: { status: 0, QTime: 1 }, status: 'OK', note: 'Authentication required for admin core' };
+
+const BAIT_AWS_CONSOLE = `<!doctype html><html><head><title>AWS Management Console</title></head><body><h1>Sign In</h1><form action="/signin" method="post"><input name="account" placeholder="Account ID or alias"><input name="username"><input type="password" name="password"><button>Sign In</button></form><p>Arden Point Capital - Research AWS</p></body></html>`;
+
+const BAIT_ECP = `<!doctype html><html><head><title>Exchange Admin Center</title></head><body><form action="/ecp/default.aspx" method="post"><input name="username"><input type="password" name="password"><button>Sign in</button></form><p>Microsoft Exchange Control Panel - Internal only</p></body></html>`;
+
 // ─── Internal route router ───────────────────────────────────────────────────
 const router = Router();
 
@@ -369,6 +405,110 @@ Disallow: /openapi.json
 # Internal data room, administrative, and backup paths are not public indexes.
 `,
   );
+}
+
+// ─── Easy lure handlers (provide interactive feedback on GET/POST) ───────────
+export function jenkinsLoginHandler(req, res) {
+  recordHit(req, 'jenkins_probe');
+  if (req.method === 'POST') {
+    res
+      .status(200)
+      .type('text/html')
+      .send(
+        '<!doctype html><html><body><h2>Invalid username or password.</h2><p><a href="/jenkins">Try again</a></p></body></html>',
+      );
+  } else {
+    res.status(200).type('text/html').send(BAIT_JENKINS);
+  }
+}
+
+export function gitlabSignInHandler(req, res) {
+  recordHit(req, 'gitlab_probe');
+  if (req.method === 'POST') {
+    res
+      .status(200)
+      .type('text/html')
+      .send(
+        '<!doctype html><html><body><h2>Invalid Login or password.</h2><form action="/users/sign_in" method="post"><input name="user[login]"><input type="password" name="user[password]"><button>Sign in</button></form></body></html>',
+      );
+  } else {
+    res.status(200).type('text/html').send(BAIT_GITLAB);
+  }
+}
+
+export function grafanaLoginHandler(req, res) {
+  recordHit(req, 'grafana_probe');
+  if (req.method === 'POST') {
+    res
+      .status(200)
+      .type('text/html')
+      .send(
+        '<!doctype html><html><body style="background:#111;color:#ddd"><h2>Invalid username or password</h2><form action="/login" method="post"><input name="user"><input type="password" name="password"><button>Log in</button></form></body></html>',
+      );
+  } else {
+    res.status(200).type('text/html').send(BAIT_GRAFANA);
+  }
+}
+
+export function actuatorEnvHandler(req, res) {
+  recordHit(req, 'actuator_probe');
+  const p = req.path || '';
+  if (p.includes('/beans')) {
+    res.status(200).json({ beans: { 'dataSource': { scope: 'singleton', type: 'com.zaxxer.hikari.HikariDataSource' } } });
+  } else if (p.includes('/health')) {
+    res.status(200).json({ status: 'UP', components: { db: { status: 'UP' } } });
+  } else if (p.includes('/env')) {
+    res.status(200).json(BAIT_ACTUATOR_ENV);
+  } else {
+    res.status(200).json(BAIT_ACTUATOR);
+  }
+}
+
+export function owaHandler(req, res) {
+  recordHit(req, 'owa_probe');
+  if (req.method === 'POST') {
+    res
+      .status(200)
+      .type('text/html')
+      .send(
+        '<!doctype html><html><body><h2>Authentication failed. Please try again.</h2><form action="/owa/auth.owa" method="post"><input name="username"><input type="password" name="password"><button>Sign in</button></form></body></html>',
+      );
+  } else {
+    res.status(200).type('text/html').send(BAIT_OWA);
+  }
+}
+
+export function solrHandler(req, res) {
+  recordHit(req, 'solr_probe');
+  res.status(200).json(BAIT_SOLR);
+}
+
+export function awsConsoleHandler(req, res) {
+  recordHit(req, 'aws_console_probe');
+  if (req.method === 'POST') {
+    res
+      .status(200)
+      .type('text/html')
+      .send(
+        '<!doctype html><html><body><h2>Authentication failed for user.</h2><form action="/signin" method="post"><input name="account"><input name="username"><input type="password" name="password"><button>Sign In</button></form></body></html>',
+      );
+  } else {
+    res.status(200).type('text/html').send(BAIT_AWS_CONSOLE);
+  }
+}
+
+export function exchangeEcpHandler(req, res) {
+  recordHit(req, 'ecp_probe');
+  if (req.method === 'POST') {
+    res
+      .status(200)
+      .type('text/html')
+      .send(
+        '<!doctype html><html><body><h2>The user name or password is incorrect.</h2><form action="/ecp/default.aspx" method="post"><input name="username"><input type="password" name="password"><button>Sign in</button></form></body></html>',
+      );
+  } else {
+    res.status(200).type('text/html').send(BAIT_ECP);
+  }
 }
 
 // ─── Aggregations used by the admin UI ───────────────────────────────────────

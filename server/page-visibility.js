@@ -25,6 +25,15 @@ export function loadVisibilityMap() {
   return map;
 }
 
+/**
+ * Load current site branding (single row).
+ * @returns {{brand_name: string, footer_text: string, accent_color: string}}
+ */
+export function loadBranding() {
+  const rows = getAll(`SELECT brand_name, footer_text, accent_color FROM site_branding WHERE id=1 LIMIT 1`);
+  return rows[0] || { brand_name: 'Infini', footer_text: 'Infini · MI', accent_color: '#34d399' };
+}
+
 /** @param {Express.Request['user']} user */
 export function pageVisibleToUser(pageKey, user) {
   const v = loadVisibilityMap()[pageKey] || 'public';
@@ -46,6 +55,9 @@ export function requirePageVisible(pageKey) {
 const publicRouter = Router();
 publicRouter.get('/visibility', (_req, res) => {
   res.json({ pages: loadVisibilityMap() });
+});
+publicRouter.get('/branding', (_req, res) => {
+  res.json(loadBranding());
 });
 
 const adminRouter = Router();
@@ -80,6 +92,41 @@ adminRouter.patch('/visibility', (req, res) => {
   });
 
   res.json({ pages: loadVisibilityMap(), updated: updatedKeys });
+});
+
+adminRouter.patch('/branding', (req, res) => {
+  const body = req.body || {};
+  const updates = [];
+  const params = [];
+  if (body.brand_name !== undefined) {
+    const v = String(body.brand_name).trim();
+    if (!v) return res.status(400).json({ error: 'invalid_brand_name' });
+    updates.push('brand_name = ?');
+    params.push(v);
+  }
+  if (body.footer_text !== undefined) {
+    updates.push('footer_text = ?');
+    params.push(String(body.footer_text));
+  }
+  if (body.accent_color !== undefined) {
+    let v = String(body.accent_color);
+    if (!/^#?[0-9a-fA-F]{6}$/.test(v)) return res.status(400).json({ error: 'invalid_accent_color' });
+    if (!v.startsWith('#')) v = '#' + v;
+    updates.push('accent_color = ?');
+    params.push(v);
+  }
+  if (!updates.length) return res.status(400).json({ error: 'no_fields_to_update' });
+  params.push(req.user?.id ?? null);
+  run(
+    `UPDATE site_branding SET ${updates.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_by = ? WHERE id=1`,
+    params,
+  );
+  auditReq(req, {
+    actionType: 'branding.update',
+    targetType: 'site_branding',
+    payload: { brand_name: body.brand_name, footer_text: body.footer_text, accent_color: body.accent_color },
+  });
+  res.json(loadBranding());
 });
 
 export { publicRouter as sitePublicRouter };

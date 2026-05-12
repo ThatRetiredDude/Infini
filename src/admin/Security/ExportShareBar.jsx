@@ -13,6 +13,7 @@
 
 import { useState } from 'react';
 import { API_BASE } from './shared.jsx';
+import { fetchWithCsrf } from '../../lib/api.js';
 
 function csvEscape(val) {
   const s = String(val ?? '');
@@ -58,7 +59,7 @@ export default function ExportShareBar({ rows = [], filename = 'export', source,
     }
     setSending(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/security/share`, {
+      const res = await fetchWithCsrf(`${API_BASE}/admin/security/share`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

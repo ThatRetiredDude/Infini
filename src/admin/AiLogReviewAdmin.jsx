@@ -6,6 +6,7 @@ const SAMPLE_SELECTION = JSON.stringify(
     honeypot_ids: [],
     access_ids: [],
     ai_flag_ids: [],
+    network_ids: [],
     maze_days: {},
     notes: 'Optional pasted JSON row IDs.',
   },
@@ -20,7 +21,11 @@ export default function AiLogReviewAdmin({ onToast }) {
   const [reviewType, setReviewType] = useState('mixed');
   const [running, setRunning] = useState(false);
   const [resultMd, setResultMd] = useState('');
+  const [resultActions, setResultActions] = useState([]);
+  const [resultGuard, setResultGuard] = useState('');
   const [history, setHistory] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [expandedLog, setExpandedLog] = useState(null);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -31,9 +36,19 @@ export default function AiLogReviewAdmin({ onToast }) {
     }
   }, [toast]);
 
+  const refreshLogs = useCallback(async () => {
+    try {
+      const data = await api.get('/api/admin/ai/request-logs');
+      setLogs(Array.isArray(data.logs) ? data.logs : []);
+    } catch (e) {
+      toast('error', e.message || String(e));
+    }
+  }, [toast]);
+
   useEffect(() => {
     refreshHistory();
-  }, [refreshHistory]);
+    refreshLogs();
+  }, [refreshHistory, refreshLogs]);
 
   async function submit() {
     let selectionObj = {};
@@ -48,6 +63,8 @@ export default function AiLogReviewAdmin({ onToast }) {
 
     setRunning(true);
     setResultMd('');
+    setResultActions([]);
+    setResultGuard('');
     try {
       const out = await api.post('/api/admin/ai/log-review', {
         review_type: reviewType,
@@ -57,7 +74,10 @@ export default function AiLogReviewAdmin({ onToast }) {
 
       toast('success', `Done (${out?.model})`);
       setResultMd(`${out.summary_md || ''}`);
+      setResultActions(out.suggested_actions || []);
+      setResultGuard(out.guard || '');
       await refreshHistory();
+      await refreshLogs();
     } catch (e) {
       toast('error', e.message || String(e));
     } finally {
@@ -85,6 +105,7 @@ export default function AiLogReviewAdmin({ onToast }) {
               className="input"
               onChange={(e) => setReviewType(e.target.value)}
             >
+              <option value="network">network sensor (Cowrie)</option>
               <option value="mixed">mixed</option>
               <option value="honeypot">monitored endpoints</option>
               <option value="maze">data room</option>
@@ -120,10 +141,21 @@ export default function AiLogReviewAdmin({ onToast }) {
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-sm text-ink-300">Latest markdown</h3>
-          <div className="card p-4 min-h-[260px] text-sm text-ink-200 whitespace-pre-wrap">
+          <h3 className="text-sm text-ink-300">Latest result</h3>
+          <div className="card p-4 min-h-[200px] text-sm text-ink-200 whitespace-pre-wrap">
             {resultMd || '(no run yet — response summary_md renders here when successful)'}
           </div>
+          {resultGuard && (
+            <div className="text-xs text-ink-400">Guard: <span className="text-accent">{resultGuard}</span></div>
+          )}
+          {resultActions.length > 0 && (
+            <div>
+              <div className="text-xs text-ink-300 mb-1">Suggested actions</div>
+              <ul className="text-xs text-ink-200 list-disc pl-5">
+                {resultActions.map((a, i) => <li key={i}>{a}</li>)}
+              </ul>
+            </div>
+          )}
 
           <h3 className="text-sm text-ink-300 pt-4">Recent reviews</h3>
           <ul className="text-xs font-mono text-ink-400 space-y-2 max-h-48 overflow-auto">
@@ -135,6 +167,40 @@ export default function AiLogReviewAdmin({ onToast }) {
               </li>
             ))}
           </ul>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm text-ink-300">Full Request / Response Logs (all LLM I/O)</h3>
+          <button type="button" className="text-xs btn" onClick={refreshLogs}>Refresh logs</button>
+        </div>
+        <div className="card p-2 text-xs max-h-96 overflow-auto">
+          {logs.length === 0 && <div className="text-ink-500 p-4">(no logs yet)</div>}
+          {logs.map((log) => (
+            <div key={log.request_id} className="border-b border-ink-800 py-2">
+              <div
+                className="flex items-center gap-2 cursor-pointer hover:bg-ink-900 px-2"
+                onClick={() => setExpandedLog(expandedLog === log.request_id ? null : log.request_id)}
+              >
+                <span className="text-accent font-mono">{log.request_id?.slice(0,8)}</span>
+                <span>{log.review_type}</span>
+                <span className={log.status === 'succeeded' ? 'text-green-400' : log.status === 'failed' ? 'text-red-400' : ''}>{log.status}</span>
+                <span className="text-ink-500">{log.model || ''}</span>
+                <span className="text-ink-400 ml-auto">{log.created_at}</span>
+              </div>
+              {expandedLog === log.request_id && (
+                <div className="mt-2 p-3 bg-ink-950 text-[10px] font-mono whitespace-pre-wrap overflow-auto">
+                  <div><strong>Prompt sent:</strong></div>
+                  <div className="text-ink-300 mb-2">{log.request_payload || '(none)'}</div>
+                  <div><strong>Response received:</strong></div>
+                  <div className="text-ink-300 mb-2">{log.response_payload || '(none)'}</div>
+                  <div>Tokens: {log.prompt_tokens || 0} / {log.completion_tokens || 0} / {log.total_tokens || 0}</div>
+                  {log.error_message && <div className="text-red-400">Error: {log.error_message}</div>}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>

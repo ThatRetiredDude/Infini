@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-3000}:3000"
+      # Cowrie honeypot (SSH on 2222, Telnet on 2223) — enabled by default via INFINI_NETWORK_HONEYPOT_ENABLED=1.
+      # Change host side ports if they conflict on your host.
+      - "${HOST_SSH_HONEYPOT_PORT:-2222}:2222"
+      - "${HOST_TELNET_HONEYPOT_PORT:-2223}:2223"
     env_file:
       - .env
     environment:
@@ -13,14 +17,31 @@ services:
       - DATABASE_FILE=/data/infini.sqlite
       - UPLOADS_DIR=/data/uploads
       - ACCESS_LOG_CSV_DIR=/data/logs
-    volumes:
-      - infini-data:/data
+      - COWRIE_HOME=/data/cowrie
+      - COWRIE_INSTALL_DIR=/opt/cowrie-install
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
+    volumes:
+      - infini-data:/data
+
+  # Network banner + full MySQL honeypot sidecar.
+  # FTP (21) + Postgres banner (5432) + MySQL pharma trap (3306 or random).
+  # May require --privileged or cap_add: NET_BIND_SERVICE + iptables REDIRECT for low ports.
+  honeypot-sidecar:
+    build: ./sidecar
+    container_name: infini-sidecar
+    restart: unless-stopped
+    ports:
+      - "21:21"
+      # MySQL honeypot (pharma infinite maze + password hashes).
+      # Dev/testing: use high random port (e.g. 33306) via MYSQL_HONEYPOT_PORT=33306
+      # Production lure: set MYSQL_HONEYPOT_PORT=3306 AFTER moving real MySQL to 33306 (see docs/honeypot-mysql-pharma.md)
+      - "${MYSQL_HONEYPOT_PORT:-33306}:3306"
+      - "5432:5432"
 
 volumes:
   infini-data:

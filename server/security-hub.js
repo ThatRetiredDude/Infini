@@ -110,6 +110,12 @@ router.get('/overview', (req, res) => {
        SUM(CASE WHEN hit_at > ${since7d} THEN 1 ELSE 0 END) AS hits_7d
      FROM ai_honeypot_hits`,
   );
+  const network_row = getOne(
+    `SELECT
+       SUM(CASE WHEN hit_at > ${since24} THEN 1 ELSE 0 END) AS events_24h,
+       SUM(CASE WHEN hit_at > ${since7d} THEN 1 ELSE 0 END) AS events_7d
+     FROM network_sensor_events`,
+  );
   const maze_tot = getOne(`
     SELECT
       (SELECT COUNT(DISTINCT ip) FROM maze_hits) AS unique_ips_all,
@@ -131,6 +137,10 @@ router.get('/overview', (req, res) => {
       SELECT ip, COUNT(*) AS n FROM ai_honeypot_hits WHERE ip IS NOT NULL AND hit_at > ${since24}
       GROUP BY ip
       UNION ALL
+      SELECT peer_ip AS ip, COUNT(*) AS n FROM network_sensor_events
+        WHERE peer_ip IS NOT NULL AND hit_at > ${since24}
+      GROUP BY peer_ip
+      UNION ALL
       SELECT ip, hit_count AS n FROM maze_hits WHERE ip IS NOT NULL AND date = date('now')
     ) t GROUP BY ip ORDER BY n DESC LIMIT 10`);
 
@@ -139,6 +149,9 @@ router.get('/overview', (req, res) => {
     WHERE created_at > ${cutoff168} GROUP BY 1 ORDER BY 1`).map((r) => ({ day: r.day, n: Number(r.n) }));
   const sparkMi = getAll(`
     SELECT date(hit_at) AS day, COUNT(*) AS n FROM access_log
+    WHERE hit_at > ${cutoff168} GROUP BY 1 ORDER BY 1`).map((r) => ({ day: r.day, n: Number(r.n) }));
+  const sparkNetwork = getAll(`
+    SELECT date(hit_at) AS day, COUNT(*) AS n FROM network_sensor_events
     WHERE hit_at > ${cutoff168} GROUP BY 1 ORDER BY 1`).map((r) => ({ day: r.day, n: Number(r.n) }));
   const sparkMaze = getAll(`
     SELECT date AS day, CAST(SUM(hit_count) AS INTEGER) AS n FROM maze_hits
@@ -167,7 +180,16 @@ router.get('/overview', (req, res) => {
            SELECT ip FROM ai_honeypot_hits WHERE hit_at > ${since}
            UNION SELECT ip FROM maze_hits WHERE last_seen > ${since}
            UNION SELECT ip FROM access_log WHERE hit_at > ${since} AND token IS NULL
+           UNION SELECT peer_ip AS ip FROM network_sensor_events WHERE hit_at > ${since} AND peer_ip IS NOT NULL
          )`,
+      )?.n || 0,
+    ),
+    network_events: Number(
+      getOne(`SELECT COUNT(*) AS n FROM network_sensor_events WHERE hit_at > ${since}`)?.n || 0,
+    ),
+    network_distinct_ips: Number(
+      getOne(
+        `SELECT COUNT(DISTINCT peer_ip) AS n FROM network_sensor_events WHERE hit_at > ${since} AND peer_ip IS NOT NULL`,
       )?.n || 0,
     ),
     decoys_active: Number(
@@ -198,6 +220,10 @@ router.get('/overview', (req, res) => {
       hits_24h: Number(honeypot_row?.hits_24h || 0),
       hits_7d: Number(honeypot_row?.hits_7d || 0),
     },
+    network_sensor: {
+      events_24h: Number(network_row?.events_24h || 0),
+      events_7d: Number(network_row?.events_7d || 0),
+    },
     maze: {
       unique_ips_all: Number(maze_tot?.unique_ips_all || 0),
       unique_ips_7d: Number(maze_tot?.unique_ips_7d || 0),
@@ -206,10 +232,383 @@ router.get('/overview', (req, res) => {
       self_ids_all: Number(maze_tot?.self_ids_all || 0),
     },
     top_ips,
-    sparklines: { flags: sparkFlags, mi_access: sparkMi, maze: sparkMaze },
+    sparklines: {
+      flags: sparkFlags,
+      mi_access: sparkMi,
+      network_sensor: sparkNetwork,
+      maze: sparkMaze,
+    },
     counts,
     top_lures,
   });
+});
+
+function latLngFromEnrichment(e) {
+  if (!e || typeof e !== 'object') return null;
+  const info = e.ipinfo;
+  if (!info) return null;
+  if (typeof info.latitude === 'number' && typeof info.longitude === 'number') {
+    return { lat: info.latitude, lng: info.longitude };
+  }
+  if (info.loc && typeof info.loc === 'string') {
+    const parts = info.loc.split(',').map((x) => parseFloat(String(x).trim()));
+    if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+      return { lat: parts[0], lng: parts[1] };
+    }
+  }
+  return null;
+}
+
+function countryFromEnrichment(e) {
+  if (!e || typeof e !== 'object') return null;
+  return e.summary?.country || e.ipinfo?.country || e.abuseipdb?.country_code || null;
+}
+
+/**
+ * Globe + spreadsheet: merged traffic with IP enrichment (lat/lng from IPInfo `loc`).
+ * Dots are only plotted where enrichment includes coordinates (monitored endpoints + data room).
+ * MI Access / AI flags appear in the table when selected but typically have no geo.
+ */
+router.get('/globe-view', (req, res) => {
+  try {
+    const srcList = String(req.query.sources || 'honeypot,maze')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const wantHp = srcList.includes('honeypot');
+    const wantMaze = srcList.includes('maze');
+    const wantAccess = srcList.includes('access') || srcList.includes('access_log');
+    const wantFlags = srcList.includes('ai_flags') || srcList.includes('flags');
+
+    const rowLimit = Math.min(500, Math.max(50, parseInt(req.query.limit, 10) || 300));
+    const scanCap = Math.min(6000, Math.max(400, parseInt(req.query.scan_cap, 10) || 2800));
+    const minHits = Math.max(1, parseInt(req.query.min_hits, 10) || 1);
+
+    const buildHoneypotWhere = () => {
+      const parts = [];
+      const params = [];
+      if (req.query.since || req.query.until) {
+        if (req.query.since) {
+          parts.push(`hit_at >= ?`);
+          params.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+        }
+        if (req.query.until) {
+          parts.push(`hit_at <= ?`);
+          params.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+        }
+      } else {
+        parts.push(`hit_at > ${rangeCutoff(req, 168)}`);
+      }
+      if (req.query.ip) {
+        parts.push(`ip = ?`);
+        params.push(String(req.query.ip));
+      }
+      if (req.query.source) {
+        parts.push(`source = ?`);
+        params.push(String(req.query.source));
+      }
+      if (req.query.path_contains) {
+        parts.push(`LOWER(IFNULL(path,'')) LIKE ?`);
+        params.push(`%${String(req.query.path_contains).slice(0, 200).toLowerCase()}%`);
+      }
+      if (req.query.country) {
+        const cc = String(req.query.country).slice(0, 2).toUpperCase();
+        parts.push(
+          `(json_extract(enrichment, '$.summary.country') = ? OR json_extract(enrichment, '$.ipinfo.country') = ? OR json_extract(enrichment, '$.abuseipdb.country_code') = ?)`,
+        );
+        params.push(cc, cc, cc);
+      }
+      parts.push(`enrichment IS NOT NULL`);
+      return { wc: parts.join(' AND '), params };
+    };
+
+    const buildMazeWhere = () => {
+      const parts = [`1=1`];
+      const params = [];
+      if (req.query.since || req.query.until) {
+        if (req.query.since) {
+          parts.push(`last_seen >= ?`);
+          params.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+        }
+        if (req.query.until) {
+          parts.push(`last_seen <= ?`);
+          params.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+        }
+      } else {
+        parts.push(`last_seen > ${rangeCutoff(req, 168)}`);
+      }
+      if (req.query.ip) {
+        parts.push(`ip = ?`);
+        params.push(String(req.query.ip));
+      }
+      if (req.query.self_id_only === 'true') {
+        parts.push(`self_id_token IS NOT NULL`);
+      }
+      if (req.query.path_contains) {
+        parts.push(`LOWER(IFNULL(paths_visited,'')) LIKE ?`);
+        params.push(`%${String(req.query.path_contains).slice(0, 400).toLowerCase()}%`);
+      }
+      if (req.query.country) {
+        const cc = String(req.query.country).slice(0, 2).toUpperCase();
+        parts.push(
+          `(json_extract(enrichment, '$.summary.country') = ? OR json_extract(enrichment, '$.ipinfo.country') = ? OR json_extract(enrichment, '$.abuseipdb.country_code') = ?)`,
+        );
+        params.push(cc, cc, cc);
+      }
+      parts.push(`enrichment IS NOT NULL`);
+      return { wc: parts.join(' AND '), params };
+    };
+
+    /** @type {any[]} */
+    const tableRows = [];
+    /** @type {Map<string, { ip: string, lat: number, lng: number, weight: number, kinds: Set<string>, country: string|null, city: string|null, last_seen: string, labels: Set<string> }>} */
+    const ipAgg = new Map();
+
+    const bumpIp = (ip, lat, lng, weight, kind, meta) => {
+      if (!ip) return;
+      let a = ipAgg.get(ip);
+      if (!a) {
+        a = {
+          ip,
+          lat: null,
+          lng: null,
+          weight: 0,
+          kinds: new Set(),
+          country: null,
+          city: null,
+          last_seen: '',
+          labels: new Set(),
+        };
+        ipAgg.set(ip, a);
+      }
+      a.weight += weight;
+      a.kinds.add(kind);
+      if (lat != null && lng != null && (a.lat == null || a.lng == null)) {
+        a.lat = lat;
+        a.lng = lng;
+      }
+      if (meta.country) a.country = meta.country;
+      if (meta.city) a.city = meta.city;
+      if (meta.last_seen && String(meta.last_seen) > String(a.last_seen)) a.last_seen = meta.last_seen;
+      if (meta.label) a.labels.add(meta.label);
+    };
+
+    if (wantHp) {
+      const { wc, params } = buildHoneypotWhere();
+      const hpRows = getAll(
+        `SELECT id, hit_at, ip, path, source, ua, enrichment
+         FROM ai_honeypot_hits WHERE ${wc}
+         ORDER BY hit_at DESC LIMIT ?`,
+        [...params, scanCap],
+      );
+      for (const r of hpRows) {
+        const e = jsonParseSafe(r.enrichment, null);
+        const ll = latLngFromEnrichment(e);
+        const cty = countryFromEnrichment(e);
+        const city = e?.ipinfo?.city || null;
+        bumpIp(r.ip, ll?.lat, ll?.lng, 1, 'honeypot', {
+          country: cty,
+          city,
+          last_seen: r.hit_at,
+          label: r.source,
+        });
+        tableRows.push({
+          kind: 'honeypot',
+          id: r.id,
+          time: r.hit_at,
+          ip: r.ip,
+          path: r.path,
+          endpoint: r.path,
+          source: r.source,
+          ua: r.ua,
+          weight: 1,
+          country: cty,
+          city,
+          lat: ll?.lat ?? null,
+          lng: ll?.lng ?? null,
+        });
+      }
+    }
+
+    if (wantMaze) {
+      const { wc, params } = buildMazeWhere();
+      const mzRows = getAll(
+        `SELECT id, ip, ua, date, last_seen, hit_count, max_depth, paths_visited, enrichment
+         FROM maze_hits WHERE ${wc}
+         ORDER BY last_seen DESC LIMIT ?`,
+        [...params, scanCap],
+      );
+      for (const r of mzRows) {
+        const e = jsonParseSafe(r.enrichment, null);
+        const ll = latLngFromEnrichment(e);
+        const cty = countryFromEnrichment(e);
+        const city = e?.ipinfo?.city || null;
+        const w = Math.max(1, Number(r.hit_count) || 1);
+        bumpIp(r.ip, ll?.lat, ll?.lng, w, 'maze', {
+          country: cty,
+          city,
+          last_seen: r.last_seen,
+          label: `maze ${r.date}`,
+        });
+        tableRows.push({
+          kind: 'maze',
+          id: r.id,
+          time: r.last_seen,
+          ip: r.ip,
+          path: null,
+          endpoint: `data-room · depth ${r.max_depth}`,
+          source: `maze · ${r.date}`,
+          maze_date: r.date,
+          hit_count: r.hit_count,
+          max_depth: r.max_depth,
+          ua: r.ua,
+          weight: w,
+          country: cty,
+          city,
+          lat: ll?.lat ?? null,
+          lng: ll?.lng ?? null,
+        });
+      }
+    }
+
+    if (wantAccess) {
+      const clauses = [];
+      const params = [];
+      if (req.query.since || req.query.until) {
+        if (req.query.since) {
+          clauses.push(`hit_at >= ?`);
+          params.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+        }
+        if (req.query.until) {
+          clauses.push(`hit_at <= ?`);
+          params.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+        }
+      } else {
+        clauses.push(`hit_at > ${rangeCutoff(req, 168)}`);
+      }
+      if (req.query.ip) {
+        clauses.push(`ip = ?`);
+        params.push(String(req.query.ip));
+      }
+      if (req.query.path_contains) {
+        clauses.push(`LOWER(IFNULL(path,'')) LIKE ?`);
+        params.push(`%${String(req.query.path_contains).slice(0, 200).toLowerCase()}%`);
+      }
+      const wc = clauses.join(' AND ');
+      const alRows = getAll(
+        `SELECT id, hit_at, ip, user_agent, path, referer, token
+         FROM access_log WHERE ${wc}
+         ORDER BY hit_at DESC LIMIT ?`,
+        [...params, scanCap],
+      );
+      for (const r of alRows) {
+        tableRows.push({
+          kind: 'access',
+          id: r.id,
+          time: r.hit_at,
+          ip: r.ip,
+          path: r.path,
+          endpoint: r.path,
+          source: 'mi_access',
+          ua: r.user_agent,
+          weight: 1,
+          country: null,
+          city: null,
+          lat: null,
+          lng: null,
+        });
+      }
+    }
+
+    if (wantFlags) {
+      const parts = [`1=1`];
+      const params = [];
+      if (req.query.since || req.query.until) {
+        if (req.query.since) {
+          parts.push(`date(created_at) >= date(?)`);
+          params.push(String(req.query.since).slice(0, 10));
+        }
+        if (req.query.until) {
+          parts.push(`date(created_at) <= date(?)`);
+          params.push(String(req.query.until).slice(0, 10));
+        }
+      } else {
+        parts.push(`created_at > ${rangeCutoff(req, 168)}`);
+      }
+      if (req.query.ip) {
+        parts.push(`ip = ?`);
+        params.push(String(req.query.ip));
+      }
+      if (req.query.route) {
+        parts.push(`route = ?`);
+        params.push(String(req.query.route));
+      }
+      if (req.query.path_contains) {
+        parts.push(`LOWER(IFNULL(path,'')) LIKE ?`);
+        params.push(`%${String(req.query.path_contains).slice(0, 200).toLowerCase()}%`);
+      }
+      const wc = parts.join(' AND ');
+      const flRows = getAll(
+        `SELECT id, created_at, ip, ua, route, path, severity, action_taken
+         FROM ai_input_flags WHERE ${wc}
+         ORDER BY created_at DESC LIMIT ?`,
+        [...params, scanCap],
+      );
+      for (const r of flRows) {
+        tableRows.push({
+          kind: 'ai_flag',
+          id: r.id,
+          time: r.created_at,
+          ip: r.ip,
+          path: r.path,
+          endpoint: r.route,
+          source: r.route,
+          ua: r.ua,
+          weight: 1,
+          country: null,
+          city: null,
+          lat: null,
+          lng: null,
+          severity: r.severity,
+          action: r.action_taken,
+        });
+      }
+    }
+
+    tableRows.sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
+    const rows = tableRows.slice(0, rowLimit);
+
+    let points = [...ipAgg.values()]
+      .filter((p) => p.weight >= minHits && p.lat != null && p.lng != null)
+      .map((p) => ({
+        ip: p.ip,
+        lat: p.lat,
+        lng: p.lng,
+        weight: p.weight,
+        country: p.country,
+        city: p.city,
+        last_seen: p.last_seen || null,
+        kinds: [...p.kinds],
+        labels: [...p.labels].slice(0, 8),
+      }));
+    points.sort((a, b) => b.weight - a.weight);
+    if (points.length > 500) points = points.slice(0, 500);
+
+    res.json({
+      points,
+      rows,
+      meta: {
+        row_limit: rowLimit,
+        scan_cap: scanCap,
+        table_total_before_limit: tableRows.length,
+        points_count: points.length,
+        note:
+          'Globe markers require stored IP enrichment with coordinates (IPInfo). MI Access / AI flags are table-only unless enriched elsewhere.',
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || 'globe_view_error' });
+  }
 });
 
 router.get('/overview/geo', (req, res) => {
@@ -344,6 +743,122 @@ function finishHoneypot(req, res, hitClause, baseParams = []) {
   const total = Number(getOne(`SELECT COUNT(*) AS n FROM ai_honeypot_hits WHERE ${wc}`, params)?.n || 0);
   res.json({ rows, total, totalCount: total, limit, offset });
 }
+
+// ─── Cowrie / network_sensor events ─────────────────────────────────────────
+router.get('/network-sensor/stats', (_req, res) => {
+  const since24 = sqlHoursAgo(24);
+  const since168 = sqlHoursAgo(24 * 7);
+  const totals = getOne(`
+    SELECT
+      (SELECT COUNT(*) FROM network_sensor_events) AS events_all,
+      (SELECT COUNT(*) FROM network_sensor_events WHERE hit_at > ${since24}) AS events_24h,
+      (SELECT COUNT(*) FROM network_sensor_events WHERE hit_at > ${since168}) AS events_7d,
+      (SELECT COUNT(DISTINCT peer_ip) FROM network_sensor_events WHERE peer_ip IS NOT NULL AND hit_at > ${since24}) AS distinct_ips_24h,
+      (SELECT COUNT(DISTINCT peer_ip) FROM network_sensor_events WHERE peer_ip IS NOT NULL) AS distinct_ips_all
+  `);
+  const by_protocol = getAll(`
+    SELECT protocol, COUNT(*) AS hits FROM network_sensor_events
+    WHERE hit_at > ${since168} AND protocol IS NOT NULL AND protocol <> ''
+    GROUP BY protocol ORDER BY hits DESC LIMIT 20
+  `).map((r) => ({ ...r, hits: Number(r.hits) }));
+  const by_event = getAll(`
+    SELECT event_type, COUNT(*) AS hits FROM network_sensor_events
+    WHERE hit_at > ${since168}
+    GROUP BY event_type ORDER BY hits DESC LIMIT 25
+  `).map((r) => ({ ...r, hits: Number(r.hits) }));
+  res.json({
+    totals: {
+      events_all: Number(totals?.events_all || 0),
+      events_24h: Number(totals?.events_24h || 0),
+      events_7d: Number(totals?.events_7d || 0),
+      distinct_ips_24h: Number(totals?.distinct_ips_24h || 0),
+      distinct_ips_all: Number(totals?.distinct_ips_all || 0),
+    },
+    by_protocol,
+    by_event,
+  });
+});
+
+router.get('/network-sensor', (req, res) => {
+  const format = String(req.query.format || '');
+  if (req.query.since || req.query.until) {
+    const clauses = [];
+    const sp = [];
+    if (req.query.since) {
+      clauses.push(`hit_at >= ?`);
+      sp.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+    }
+    if (req.query.until) {
+      clauses.push(`hit_at <= ?`);
+      sp.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+    }
+    return finishNetworkSensor(req, res, clauses.join(' AND '), sp, format);
+  }
+  return finishNetworkSensor(req, res, `hit_at > ${rangeCutoff(req, 24)}`, [], format);
+});
+
+function finishNetworkSensor(req, res, hitClause, baseParams = [], format = '') {
+  const { limit, offset } = parsePage(req);
+  const where = [hitClause];
+  const params = [...baseParams];
+  if (req.query.protocol) {
+    where.push(`protocol = ?`);
+    params.push(String(req.query.protocol).slice(0, 32));
+  }
+  if (req.query.event_type) {
+    where.push(`event_type LIKE ?`);
+    params.push(`%${String(req.query.event_type).slice(0, 200)}%`);
+  }
+  if (req.query.ip) {
+    where.push(`peer_ip = ?`);
+    params.push(String(req.query.ip).slice(0, 128));
+  }
+  if (req.query.session_id) {
+    where.push(`session_id = ?`);
+    params.push(String(req.query.session_id).slice(0, 128));
+  }
+  const wc = where.join(' AND ');
+  const rows = getAll(
+    `SELECT id, hit_at, peer_ip, session_id, sensor_name, protocol, event_type,
+            cowrie_eventid, payload_json, enrichment
+     FROM network_sensor_events
+     WHERE ${wc}
+     ORDER BY hit_at DESC LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  ).map((r) => ({
+    ...r,
+    enrichment: jsonParseSafe(r.enrichment, null),
+    payload_json: jsonParseSafe(r.payload_json, null),
+  }));
+  const total = Number(getOne(`SELECT COUNT(*) AS n FROM network_sensor_events WHERE ${wc}`, params)?.n || 0);
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="network-sensor-events.csv"');
+    return res.send(rowsToCsv(rows));
+  }
+  if (format === 'json') {
+    res.setHeader('Content-Disposition', 'attachment; filename="network-sensor-events.json"');
+    return res.json(rows);
+  }
+  res.json({ rows, total, totalCount: total, limit, offset });
+}
+
+router.get('/network-sensor/session/:sessionId', (req, res) => {
+  const sid = String(req.params.sessionId || '').slice(0, 128);
+  if (!sid) return res.status(400).json({ error: 'session_id required' });
+  const rows = getAll(
+    `SELECT id, hit_at, peer_ip, session_id, sensor_name, protocol, event_type,
+            cowrie_eventid, payload_json, enrichment
+     FROM network_sensor_events WHERE session_id = ?
+     ORDER BY hit_at ASC LIMIT 500`,
+    [sid],
+  ).map((r) => ({
+    ...r,
+    enrichment: jsonParseSafe(r.enrichment, null),
+    payload_json: jsonParseSafe(r.payload_json, null),
+  }));
+  res.json({ session_id: sid, rows, count: rows.length });
+});
 
 // ─── Data room activity ────────────────────────────────────────────────────
 router.get('/maze/live', (_req, res) => {
@@ -669,10 +1184,12 @@ router.get('/flagged', async (req, res) => {
        FROM (
          SELECT ip, date AS day, hit_count AS hits, last_seen, enrichment FROM maze_hits WHERE last_seen > ${cutoff}
          UNION ALL
-         SELECT ip, date(hit_at) AS day, 1 AS hits, hit_at AS last_seen, enrichment
-         FROM ai_honeypot_hits WHERE ip IS NOT NULL AND hit_at > ${cutoff}
-       ) x
-       GROUP BY ip HAVING COUNT(DISTINCT day) >= 5
+         SELECT ip, date(hit_at) AS day, 1 AS hits, hit_at AS last_seen, enrichment FROM access_log WHERE ip IS NOT NULL AND hit_at > ${cutoff}
+         UNION ALL
+         SELECT ip, date(hit_at) AS day, 1 AS hits, hit_at AS last_seen, enrichment FROM ai_honeypot_hits WHERE ip IS NOT NULL AND hit_at > ${cutoff}
+         UNION ALL
+         SELECT peer_ip AS ip, date(hit_at) AS day, 1 AS hits, hit_at AS last_seen, enrichment FROM network_sensor_events WHERE peer_ip IS NOT NULL AND hit_at > ${cutoff}
+       ) GROUP BY ip HAVING COUNT(DISTINCT day) >= 5
        ORDER BY total_hits DESC LIMIT 200`,
     ).map((r) => ({
       ...r,
@@ -686,8 +1203,14 @@ router.get('/flagged', async (req, res) => {
         SELECT ip, enrichment, last_seen, 'maze' AS source FROM maze_hits
           WHERE enrichment IS NOT NULL AND last_seen > ${cutoff}
         UNION ALL
-        SELECT ip, enrichment, hit_at AS last_seen, 'honeypot' FROM ai_honeypot_hits
+        SELECT ip, enrichment, hit_at AS last_seen, 'access_log' AS source FROM access_log
           WHERE ip IS NOT NULL AND enrichment IS NOT NULL AND hit_at > ${cutoff}
+        UNION ALL
+        SELECT ip, enrichment, hit_at AS last_seen, 'ai_honeypot' AS source FROM ai_honeypot_hits
+          WHERE ip IS NOT NULL AND enrichment IS NOT NULL AND hit_at > ${cutoff}
+        UNION ALL
+        SELECT peer_ip AS ip, enrichment, hit_at AS last_seen, 'network_sensor' FROM network_sensor_events
+          WHERE peer_ip IS NOT NULL AND enrichment IS NOT NULL AND hit_at > ${cutoff}
       )`)) {
       const e = typeof r.enrichment === 'string' ? jsonParseSafe(r.enrichment, {}) : r.enrichment;
       const score = Number(e?.abuseipdb?.abuse_confidence);
@@ -705,7 +1228,8 @@ router.get('/flagged', async (req, res) => {
     const allForTor = getAll(`
       SELECT ip FROM maze_hits WHERE ip IS NOT NULL
       UNION SELECT ip FROM ai_honeypot_hits WHERE ip IS NOT NULL
-      UNION SELECT ip FROM access_log WHERE ip IS NOT NULL`);
+      UNION SELECT ip FROM access_log WHERE ip IS NOT NULL
+      UNION SELECT peer_ip AS ip FROM network_sensor_events WHERE peer_ip IS NOT NULL`);
     const uniqueIps = [...new Set(allForTor.map((x) => x.ip))];
     const torSet = await filterTorExits(uniqueIps);
 
@@ -719,6 +1243,10 @@ router.get('/flagged', async (req, res) => {
         mh ||
         getOne(
           `SELECT enrichment, hit_at AS last_seen FROM ai_honeypot_hits WHERE ip = ? ORDER BY hit_at DESC LIMIT 1`,
+          [ip],
+        ) ||
+        getOne(
+          `SELECT enrichment, hit_at AS last_seen FROM network_sensor_events WHERE peer_ip = ? ORDER BY hit_at DESC LIMIT 1`,
           [ip],
         );
       if (pick) {
@@ -814,6 +1342,17 @@ router.get('/lures', (_req, res) => {
     }
   }
 
+  const netTotal = getOne(
+    `SELECT COUNT(*) AS hits, MAX(hit_at) AS last_hit FROM network_sensor_events`,
+  );
+  rows.push({
+    source: 'cowrie_network_sensor',
+    path:
+      'TCP Cowrie (SSH default :2222, Telnet :2223 — enabled by default via INFINI_NETWORK_HONEYPOT_ENABLED=1)',
+    hits: Number(netTotal?.hits || 0),
+    last_hit: netTotal?.last_hit || null,
+  });
+
   res.json({ rows });
 });
 
@@ -832,7 +1371,7 @@ router.get('/alerts', (_req, res) => {
   res.json({ rules, deliveries });
 });
 
-const VALID_SOURCES = new Set(['ai_flags', 'access_log', 'honeypot', 'maze']);
+const VALID_SOURCES = new Set(['ai_flags', 'access_log', 'honeypot', 'maze', 'network_sensor']);
 const VALID_CHANNELS = new Set(['email', 'discord', 'telegram', 'webhook']);
 
 function validateRulePayload(body) {
@@ -972,6 +1511,13 @@ router.post('/share', async (req, res) => {
          FROM ai_input_flags
          WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-${hours} hours')
          ORDER BY created_at DESC LIMIT 500`,
+      );
+    } else if (source === 'network_sensor') {
+      rows = getAll(
+        `SELECT hit_at, peer_ip, protocol, event_type, session_id, cowrie_eventid
+         FROM network_sensor_events
+         WHERE hit_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-${hours} hours')
+         ORDER BY hit_at DESC LIMIT 500`,
       );
     } else {
       return res.status(400).json({ error: 'invalid_source' });

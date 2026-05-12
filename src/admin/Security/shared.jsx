@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { fetchWithCsrf } from '../../lib/api.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 export { API_BASE };
@@ -107,7 +108,7 @@ export function DisabledUsersPanel({ toast, onRestored }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/ai-flags/disabled-users`);
+      const res = await fetchWithCsrf(`${API_BASE}/admin/ai-flags/disabled-users`);
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || 'Failed');
       setUsers(j.users || []);
@@ -123,7 +124,7 @@ export function DisabledUsersPanel({ toast, onRestored }) {
     if (!confirm(`Restore AI access for ${username || userId}?`)) return;
     setRestoring(userId);
     try {
-      const res = await fetch(`${API_BASE}/admin/ai-flags/users/${userId}/restore`, {
+      const res = await fetchWithCsrf(`${API_BASE}/admin/ai-flags/users/${userId}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'Manual restore by admin' }),

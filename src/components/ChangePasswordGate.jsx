@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { changePassword } from '../lib/api.js';
+import { changePassword, logout } from '../lib/api.js';
 
 /** Blocks the app until seeded admin rotates password (cannot dismiss backdrop). */
 export default function ChangePasswordGate({ user, onSuccess, onSignedOut }) {
@@ -47,7 +47,7 @@ export default function ChangePasswordGate({ user, onSuccess, onSignedOut }) {
   async function handleSignOut() {
     setBusy(true);
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await logout();
       onSignedOut?.();
     } finally {
       setBusy(false);
