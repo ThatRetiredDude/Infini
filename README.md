@@ -38,14 +38,7 @@ Open **http://localhost:3000**
 - Username: `admin`
 - Password: `ChangeMeImmediately!` (include the exclamation mark)
 
-<<<<<<< HEAD
-| | |
-| --- | --- |
-| **Bootstrap** | **`admin`** / **`ChangeMeImmediately!'** |
-| **Right after login** | The app forces **Set your password** in the UI. New password must be **at least 12 characters**. Until you finish that step, **`/admin`** and **`/api/admin/*`** return **403** with `password_change_required`. |
-=======
 The system will immediately force you to set a new password (12+ characters). After that, the admin area unlocks.
->>>>>>> V1.2
 
 That's it. Your honeypot is live and logging.
 

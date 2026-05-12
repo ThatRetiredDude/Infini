@@ -13,7 +13,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json* ./
-RUN npm install --include=dev
+RUN npm install --include=dev --legacy-peer-deps --legacy-peer-deps
 
 COPY . .
 RUN npm run build && npm prune --omit=dev
