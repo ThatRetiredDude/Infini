@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 // Idempotently creates the seed admin from env vars if no admin exists.
 
-import crypto from 'node:crypto';
 import 'dotenv/config';
 import { ensureSchema } from '../schema.js';
 import { getOne, closeDb } from '../db.js';
 import { createUser } from '../auth.js';
 
+/** Public, documented bootstrap only when SEED_ADMIN_PASSWORD is unset — user must rotate on first sign-in. */
+const DOCUMENTED_BOOTSTRAP_PASSWORD = 'ChangeMeImmediately!';
+
 const USERNAME = process.env.SEED_ADMIN_USERNAME || 'admin';
 const EMAIL = process.env.SEED_ADMIN_EMAIL || null;
-
-function randomBootstrapPassword() {
-  return crypto.randomBytes(18).toString('base64url');
-}
 
 async function main() {
   ensureSchema();
@@ -30,11 +28,10 @@ async function main() {
     : '';
   let password = trimmed;
   if (!password) {
-    password = randomBootstrapPassword();
+    password = DOCUMENTED_BOOTSTRAP_PASSWORD;
     console.warn(
-      '[seed-admin] SEED_ADMIN_PASSWORD not set — generated one-time bootstrap password. Copy it now; logs may be visible to host operators.',
+      '[seed-admin] SEED_ADMIN_PASSWORD not set — using documented bootstrap password (see README). Set SEED_ADMIN_PASSWORD to choose a different initial secret.',
     );
-    console.warn(`[seed-admin] BOOTSTRAP_PASSWORD=${password}`);
   }
 
   const user = await createUser({
