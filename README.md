@@ -1,6 +1,6 @@
 # Infini
 
-**Self-hosted security monitoring and honeypot-style surfaces** behind a small Node/Express API and SPA. *Work in progress — behavior, APIs, and documentation may change without notice; treat production as experimental until you pin a release and review config yourself.*
+**Self-hosted security monitoring and honeypot-style surfaces** behind a small Node/Express API and SPA. *Work in progress — behavior, APIs, and documentation may change without notice; treat production as experimental.*
 
 ## Purpose
 
