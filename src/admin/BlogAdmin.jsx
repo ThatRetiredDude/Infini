@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import BlogEditor from './BlogEditor.jsx';
 
@@ -33,6 +33,32 @@ export default function BlogAdmin({ onToast }) {
   useEffect(() => {
     loadList();
   }, [loadList]);
+
+  const coverFileRef = useRef(null);
+
+  async function uploadCover() {
+    if (!coverFileRef.current) return;
+    coverFileRef.current.click();
+  }
+
+  async function handleCoverSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const fd = new window.FormData();
+      fd.append('file', file);
+      const csrf = document.cookie.split(';').find(c => c.trim().startsWith('mi_csrf='))?.split('=')[1] || '';
+      const headers = csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {};
+      const res = await fetch('/api/admin/uploads', { method: 'POST', credentials: 'include', headers, body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'upload_failed');
+      if (data?.url) setForm(f => ({ ...f, cover_image_url: data.url }));
+    } catch (err) {
+      toast('error', 'Cover upload failed: ' + (err.message || err));
+    } finally {
+      e.target.value = '';
+    }
+  }
 
   function openNew() {
     setSelected(null);
@@ -175,12 +201,20 @@ export default function BlogAdmin({ onToast }) {
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="block text-xs text-ink-500 mb-1">Cover image URL</label>
-              <input
-                className="w-full rounded border border-ink-600 bg-ink-950 px-3 py-2 text-sm"
-                value={form.cover_image_url}
-                onChange={(e) => setForm((f) => ({ ...f, cover_image_url: e.target.value }))}
-              />
+              <label className="block text-xs text-ink-500 mb-1">Cover image</label>
+              <div className="flex gap-2 items-center">
+                <input
+                  className="flex-1 rounded border border-ink-600 bg-ink-950 px-3 py-2 text-sm"
+                  value={form.cover_image_url}
+                  onChange={(e) => setForm((f) => ({ ...f, cover_image_url: e.target.value }))}
+                  placeholder="https://... or upload"
+                />
+                <button type="button" className="btn-ghost text-xs" onClick={uploadCover}>Upload</button>
+              </div>
+              <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleCoverSelected} />
+              {form.cover_image_url && (
+                <img src={form.cover_image_url} alt="" className="mt-2 max-h-32 rounded border border-ink-700 object-cover" />
+              )}
             </div>
             <div>
               <label className="block text-xs text-ink-500 mb-1">Status</label>

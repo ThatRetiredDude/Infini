@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import multer from 'multer';
 
 import { ensureSchema } from './schema.js';
 import { closeDb } from './db.js';
@@ -27,7 +28,7 @@ import {
 } from './auth.js';
 import { audit, auditReq, getRequestIp } from './audit.js';
 import { buildAccessToken } from './crypto.js';
-import { run } from './db.js';
+import { run, getOne } from './db.js';
 import { csrfProtection } from './csrf.js';
 import adminMfaRouter from './admin-mfa.js';
 import { issueMfaTicket, verifyMfaTicket, unsealTotpSecret, verifyTotpCode } from './mfa-totp.js';
@@ -78,6 +79,12 @@ const IS_PROD = NODE_ENV === 'production';
 const ACCESS_LOG_CSV_DIR = process.env.ACCESS_LOG_CSV_DIR
   ? path.resolve(ROOT, process.env.ACCESS_LOG_CSV_DIR)
   : null;
+
+// Uploads directory (shared with static /uploads and blog images)
+const uploadsDir = process.env.UPLOADS_DIR
+  ? path.resolve(process.env.UPLOADS_DIR)
+  : path.join(ROOT, 'data', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 function resolveCorsOrigins() {
   const fromEnv = (process.env.CORS_ORIGINS || '')
@@ -189,6 +196,26 @@ app.use('/api/admin/carousel', createCarouselAdminRouter());
 app.use('/api/admin/audit', adminAuditRouter);
 app.use('/api/admin/ai', aiLogReviewRouter);
 app.use('/api/admin/auth/mfa', adminMfaRouter);
+
+// ─── Admin uploads for blog images (cover + inline) ───────────────────────────
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.bin';
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('only_images_allowed'));
+    cb(null, true);
+  },
+});
+app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no_file' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
 
 // ─── Monitored internal-looking routes (mounted under /api/secrets) ───────────
 // IMPORTANT: data-room router must mount BEFORE monitoredEndpointRouter, because the
@@ -553,10 +580,6 @@ app.get('/api/mi-verify', (req, res) => {
 
 // Serve build output in production, plus uploaded files.
 const distDir = path.join(ROOT, 'dist');
-const uploadsDir = process.env.UPLOADS_DIR
-  ? path.resolve(process.env.UPLOADS_DIR)
-  : path.join(ROOT, 'data', 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
 
 if (IS_PROD && fs.existsSync(distDir)) {
@@ -584,10 +607,32 @@ app.get('*', (req, res, next) => {
   }
   fs.readFile(indexPath, 'utf8', (err, html) => {
     if (err) return next(err);
-    const injected = html.replace(
-      /<head>/i,
-      `<head>\n    <meta name="mi-session-ref" content="${token}" />`,
-    );
+    let headExtra = `<meta name="mi-session-ref" content="${token}" />`;
+    // Blog social preview meta (og + twitter cards) for x.com etc.
+    if (req.path.startsWith('/blog/')) {
+      const slug = req.path.slice(6).split(/[?#]/)[0].replace(/\/$/, '');
+      if (slug) {
+        const post = getOne(
+          `SELECT title, excerpt, cover_image_url FROM blog_posts WHERE slug = ? AND status = 'published' LIMIT 1`,
+          [slug]
+        );
+        if (post) {
+          const site = (process.env.PUBLIC_SITE_ORIGIN || process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+          const img = post.cover_image_url ? (post.cover_image_url.startsWith('http') ? post.cover_image_url : (site + post.cover_image_url)) : '';
+          const desc = (post.excerpt || '').slice(0, 200).replace(/"/g, '');
+          const title = (post.title || 'Blog').replace(/"/g, '');
+          headExtra += `
+    <meta property="og:title" content="${title}" />
+    <meta property="og:description" content="${desc}" />
+    <meta property="og:image" content="${img}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="${desc}" />
+    <meta name="twitter:image" content="${img}" />`;
+        }
+      }
+    }
+    const injected = html.replace(/<head>/i, `<head>\n    ${headExtra}`);
     const isAdminShell = req.path === '/admin' || req.path.startsWith('/admin/');
     const headers = { 'Cache-Control': 'no-store' };
     if (isAdminShell) {
