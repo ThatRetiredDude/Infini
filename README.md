@@ -6,9 +6,7 @@
 
 Infini is a **research-style honeypot / monitoring stack** in **active development**: decoy and instrumented routes, a data-room-style exploration surface, access logging, enrichment, admin review (Security Hub), and alert delivery. Expect **more surfaces and behavior over time.**
 
-It ships as **one container (or dev process)** with **SQLite on disk** — no Postgres, no Redis, no separate auth service. Everything needed to run it lives in this repo.
-
-Internally, **Maxwell International (MI)** remains the codename in tokens (`mi_session`, `MI2026-XXXX`, etc.) and related markers; **externally** the product is **Infini**.
+It ships as **one container** with **SQLite on disk** — no Postgres, no Redis, no separate auth service. Everything needed to run it lives in this repo.
 
 ## Features overview
 
