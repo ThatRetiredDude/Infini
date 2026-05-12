@@ -98,7 +98,7 @@ app.use((_req, res, next) => {
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'infinipot', env: NODE_ENV });
+  res.json({ ok: true, service: 'infini', env: NODE_ENV });
 });
 
 // ─── Public / site ─────────────────────────────────────────────────────────────
@@ -372,7 +372,7 @@ app.get('*', (req, res, next) => {
 let stopAlertsScheduler = null;
 const server = app.listen(PORT, () => {
    
-  console.log(`[infinipot] listening on http://localhost:${PORT}  (${NODE_ENV})`);
+  console.log(`[infini] listening on http://localhost:${PORT}  (${NODE_ENV})`);
   if (process.env.DISABLE_SECURITY_ALERT_SCHEDULER !== '1') {
     stopAlertsScheduler = startAlertsScheduler();
   }
@@ -380,7 +380,7 @@ const server = app.listen(PORT, () => {
 
 function shutdown(signal) {
    
-  console.log(`[infinipot] received ${signal}, shutting down…`);
+  console.log(`[infini] received ${signal}, shutting down…`);
   if (typeof stopAlertsScheduler === 'function') {
     stopAlertsScheduler();
     stopAlertsScheduler = null;

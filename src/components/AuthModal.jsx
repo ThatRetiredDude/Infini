@@ -42,7 +42,7 @@ export default function AuthModal({ open, onClose, onAuthed }) {
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg mb-1">Sign in</h2>
-        <p className="text-sm text-ink-400 mb-4">Admin access for InfiniPot.</p>
+        <p className="text-sm text-ink-400 mb-4">Admin access for Infini.</p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label" htmlFor="auth-username">Username</label>

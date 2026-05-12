@@ -1,4 +1,4 @@
-# InfiniPot
+# Infini
 
 **Work in progress.** Behavior, APIs, security surfaces, and documentation may change without notice. Treat production deployments as experimental until you pin a release and review configuration yourself.
 
@@ -23,7 +23,7 @@ Requirements: **Node.js 20+** and **npm**.
 
 ```bash
 git clone <repository-url>
-cd InfiniPot
+cd <repository-directory>
 cp .env.example .env
 ```
 
@@ -41,7 +41,7 @@ npm run dev
 
 ### Docker (production-like)
 
-Image rebuilds do **not** remove data; SQLite and uploads persist in the Compose volume **`infinipot-data`** (mounted **`/data`**) unless you delete that volume.
+Image rebuilds do **not** remove data; SQLite and uploads persist in the Compose volume **`infini-data`** (mounted **`/data`**) unless you delete that volume.
 
 Each container start: **`docker-entrypoint.sh`** runs seed (**First admin account**), then the API (**`tini`** → **`node server/index.js`**).
 
@@ -54,7 +54,15 @@ Open **`http://localhost:3000`**, or the host port from **`HOST_PORT`** in `.env
 
 On the public Internet, set a strong **`SEED_ADMIN_PASSWORD`**; the documented bootstrap is predictable.
 
-To reinstall from scratch: `docker compose down`, then **`docker volume rm …`** matching your **`…_infinipot-data`** volume (`docker volume ls`; Compose prefixes by project).
+To reinstall from scratch: `docker compose down`, then **`docker volume rm …`** matching your **`…_infini-data`** volume (`docker volume ls`; Compose prefixes by project).
+
+### Migrating from InfiniPot-named deployments
+
+If you previously ran Compose with **`infinipot-data`** and **`/data/infinipot.sqlite`**:
+
+1. **Named volume:** Compose now uses **`infini-data`**. Copying data over before switching avoids an empty database — e.g. mount both volumes temporarily or `docker run --rm -v OLD_VOL:/from -v NEW_VOL:/to alpine cp -a /from/. /to/` after creating **`infini-data`** (adjust volume names from `docker volume ls`; prefix is typically `<project>_infini-data`).
+2. **SQLite filename:** Either set **`DATABASE_FILE=/data/infinipot.sqlite`** in `.env` until you **`mv`** the file to **`infini.sqlite`**, or rename once on the volume then use the default **`/data/infini.sqlite`**.
+3. **`/api/health`:** The JSON field **`service`** is now **`infini`** (was **`infinipot`**). Update external monitors or scripts that asserted the old value.
 
 ### Smoke check (optional)
 
@@ -67,9 +75,9 @@ SMOKE_BASE=http://127.0.0.1:3000 npm run smoke
 ---
 
 > Internally: **Maxwell International (MI)** — research project codename retained
-> in all internal tokens (`mi_session`, `MI2026-XXXX`, etc.) and related access markers. **Externally:** InfiniPot.
+> in all internal tokens (`mi_session`, `MI2026-XXXX`, etc.) and related access markers. **Externally:** Infini.
 
-InfiniPot is a small, opinionated web app with three feature surfaces:
+Infini is a small, opinionated web app with three feature surfaces:
 
 1. **Blog** — markdown / TipTap-edited posts with cover images, drafts/published states, and per-post view counts.
 2. **Donations** — static outbound buttons to a self-hosted BTCPay POS and to a partner fund.
@@ -81,7 +89,7 @@ It runs as a **single Docker container** with **SQLite on disk** — no Postgres
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                       InfiniPot container                        │
+│                       Infini container                         │
 │                                                                  │
 │  Node 20 / Express ─────────────────────────────────────────┐    │
 │   ├─ /api/auth/*       login, me, change-password; bcrypt; JWT+cookie   │    │
@@ -93,7 +101,7 @@ It runs as a **single Docker container** with **SQLite on disk** — no Postgres
 │   ├─ /api/admin/*        other admin CRUD, Security Hub, …   │    │
 │   └─ /api/mi-verify    1×1 access-log beacon                │    │
 │                                                              │    │
-│  SQLite (better-sqlite3, WAL mode) at /data/infinipot.sqlite │    │
+│  SQLite (better-sqlite3, WAL mode) at /data/infini.sqlite │    │
 │  Uploaded blog images at /data/uploads/                     │    │
 │  Access CSV mirror at /data/logs/                           │    │
 └──────────────────────────────────────────────────────────────────┘
@@ -125,7 +133,7 @@ This repo replaces an earlier codebase (historical Maxwell International tooling
 
 ## Disclaimer
 
-InfiniPot is research / educational software. The security monitoring layer is designed to discourage unauthorized scraping; it is not a substitute for proper WAF, rate-limiting at the edge, or robots compliance for legitimate user agents. You are responsible for complying with all applicable laws in any deployment.
+Infini is research / educational software. The security monitoring layer is designed to discourage unauthorized scraping; it is not a substitute for proper WAF, rate-limiting at the edge, or robots compliance for legitimate user agents. You are responsible for complying with all applicable laws in any deployment.
 
 ## License
 

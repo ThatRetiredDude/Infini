@@ -1,7 +1,7 @@
 /**
  * server/integrations.js
  *
- * Slim integrations module for InfiniPot. Stores encrypted credentials for the
+ * Slim integrations module for Infini. Stores encrypted credentials for the
  * services the monitoring layer + AI Log Review + alerts engine need, and provides
  * `getServiceCredentials(service)` for other modules to read them.
  *
@@ -393,7 +393,7 @@ router.post('/:service/test', async (req, res) => {
       const resp = await fetch(creds.webhook_url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: 'InfiniPot integration test. You can delete this message.' }),
+        body: JSON.stringify({ content: 'Infini integration test. You can delete this message.' }),
       });
       ok = resp.ok || resp.status === 204;
       message = ok ? 'Discord webhook test message sent.' : `Discord returned ${resp.status}`;
@@ -407,7 +407,7 @@ router.post('/:service/test', async (req, res) => {
       const resp = await fetch(creds.url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: method !== 'GET' ? JSON.stringify({ test: true, source: 'infinipot' }) : undefined,
+        body: method !== 'GET' ? JSON.stringify({ test: true, source: 'infini' }) : undefined,
       });
       ok = resp.ok;
       message = ok ? `Webhook responded ${resp.status}.` : `Webhook returned ${resp.status}`;

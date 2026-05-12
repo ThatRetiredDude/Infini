@@ -5,9 +5,9 @@ const FUND_URL = 'https://thefund.org';
 export default function Donations() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-12">
-      <h1 className="text-2xl mb-2">Support InfiniPot</h1>
+      <h1 className="text-2xl mb-2">Support Infini</h1>
       <p className="text-ink-300 mb-8">
-        InfiniPot is independently run and self-hosted. Funds keep the blog
+        Infini is independently run and self-hosted. Funds keep the blog
         publishing, the security telemetry, and the underlying infrastructure
         humming. None of it goes to operating costs we don&apos;t need.
       </p>
@@ -34,7 +34,7 @@ export default function Donations() {
           <h2 className="text-lg mb-1 text-ink-100">Donate to America&apos;s Fund</h2>
           <p className="text-sm text-ink-400">
             For supporters who prefer giving to thefund.org instead of directly
-            to InfiniPot.
+            to Infini.
           </p>
         </a>
       </div>

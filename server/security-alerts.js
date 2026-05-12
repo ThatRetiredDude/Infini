@@ -11,7 +11,7 @@
  *   3. If the predicate fires, dispatches via the rule's channel (email,
  *      discord, telegram, webhook) and records the delivery + audit row.
  *
- * Sources updated for InfiniPot: `access_log` replaces legacy `mi_access`
+ * Sources updated for Infini: `access_log` replaces legacy `mi_access`
  * (renamed table), `maze` added so admins can alert on data-room surges. All
  * dispatched payloads truncate strings to 500 chars to avoid PII leakage.
  */
@@ -160,7 +160,7 @@ async function dispatch(channel, recipient, rule, excerpt) {
       auth: { user: creds.user, pass: creds.pass },
     });
     await transport.sendMail({
-      from: `"${creds.from_name || 'InfiniPot Security'}" <${creds.from_address || creds.user}>`,
+      from: `"${creds.from_name || 'Infini Security'}" <${creds.from_address || creds.user}>`,
       to: recipient,
       subject: title,
       text: body,
@@ -346,7 +346,7 @@ export async function sendShare({ channel, recipient, subject, rows, format }) {
       textBody = buildSummaryText(safeRows, title);
     }
     await transport.sendMail({
-      from: `"${creds.from_name || 'InfiniPot Security'}" <${creds.from_address || creds.user}>`,
+      from: `"${creds.from_name || 'Infini Security'}" <${creds.from_address || creds.user}>`,
       to: recipient,
       subject: title,
       text: textBody,

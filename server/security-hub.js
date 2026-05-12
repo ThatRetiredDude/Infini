@@ -82,7 +82,7 @@ function rowsToCsv(rows) {
   return lines.join('\r\n');
 }
 
-// ─── Overview (legacy-compatible shape + extra counts for InfiniPot) ─────────
+// ─── Overview (legacy-compatible shape + extra counts for Infini) ─────────
 router.get('/overview', (req, res) => {
   const since24 = sqlHoursAgo(24);
   const since7d = sqlHoursAgo(24 * 7);
@@ -980,7 +980,7 @@ router.post('/share', async (req, res) => {
     await sendShare({
       channel,
       recipient,
-      subject: subject || `InfiniPot · ${source} (${hours}h)`,
+      subject: subject || `Infini · ${source} (${hours}h)`,
       rows,
       format: ['csv', 'json'].includes(format) ? format : format || 'summary',
     });

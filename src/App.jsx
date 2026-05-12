@@ -108,7 +108,7 @@ export default function App() {
             onClick={() => navigate('/')}
             className="font-mono text-lg font-semibold text-accent hover:text-accent-glow"
           >
-            InfiniPot
+            Infini
           </button>
           <nav className="flex items-center gap-1 ml-2 text-sm">
             {pageAllowed('blog', pagesVisibility, user) && (
@@ -207,7 +207,7 @@ export default function App() {
 
       <footer className="border-t border-ink-700 bg-ink-900/60">
         <div className="max-w-6xl mx-auto px-4 py-6 text-xs text-ink-400 flex flex-wrap items-center justify-between gap-2">
-          <span className="font-mono">InfiniPot · MI</span>
+          <span className="font-mono">Infini · MI</span>
           <span>Access may be logged for compliance and security review.</span>
         </div>
       </footer>

@@ -14,7 +14,7 @@ async function fetchExits() {
   try {
     const res = await fetch(TOR_BULK_EXIT_URL, {
       signal: AbortSignal.timeout(15000),
-      headers: { 'User-Agent': 'InfiniPot-security-monitor/1.0' },
+      headers: { 'User-Agent': 'Infini-security-monitor/1.0' },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();

@@ -1,4 +1,4 @@
-# ─── InfiniPot single-container image ────────────────────────────────────────
+# ─── Infini single-container image ────────────────────────────────────────
 # One container, one process, SQLite on disk. No external DB service required.
 
 FROM node:20-bookworm-slim AS build
@@ -32,24 +32,24 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root runtime user
-RUN useradd -m -d /home/infinipot -s /bin/bash infinipot
+RUN useradd -m -d /home/infini -s /bin/bash infini
 
-COPY --from=build --chown=infinipot:infinipot /app/node_modules ./node_modules
-COPY --from=build --chown=infinipot:infinipot /app/dist ./dist
-COPY --from=build --chown=infinipot:infinipot /app/server ./server
-COPY --from=build --chown=infinipot:infinipot /app/package.json ./package.json
-COPY --from=build --chown=infinipot:infinipot /app/index.html ./index.html
+COPY --from=build --chown=infini:infini /app/node_modules ./node_modules
+COPY --from=build --chown=infini:infini /app/dist ./dist
+COPY --from=build --chown=infini:infini /app/server ./server
+COPY --from=build --chown=infini:infini /app/package.json ./package.json
+COPY --from=build --chown=infini:infini /app/index.html ./index.html
 
-COPY --chmod=755 --chown=infinipot:infinipot docker-entrypoint.sh ./docker-entrypoint.sh
+COPY --chmod=755 --chown=infini:infini docker-entrypoint.sh ./docker-entrypoint.sh
 
 # Persisted data location (SQLite, uploads, and access CSV mirror) lives under /data
 RUN mkdir -p /data/uploads /data/logs \
-    && chown -R infinipot:infinipot /data
+    && chown -R infini:infini /data
 
-ENV DATABASE_FILE=/data/infinipot.sqlite
+ENV DATABASE_FILE=/data/infini.sqlite
 ENV ACCESS_LOG_CSV_DIR=/data/logs
 
-USER infinipot
+USER infini
 
 EXPOSE 3000
 

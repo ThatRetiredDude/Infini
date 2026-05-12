@@ -25,7 +25,7 @@ export default function HomePage({ navigate }) {
     <div className="max-w-4xl mx-auto px-4 py-16 space-y-12">
       <div className="card p-8">
         <p className="font-mono text-xs text-accent uppercase tracking-widest mb-2">
-          InfiniPot · MI
+          Infini · MI
         </p>
         <h1 className="text-3xl md:text-4xl mb-4">
           A research blog with built-in security telemetry.

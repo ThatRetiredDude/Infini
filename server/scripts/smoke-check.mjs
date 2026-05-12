@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * InfiniPot smoke checks (no auth). Run with the API listening on SMOKE_BASE.
+ * Infini smoke checks (no auth). Run with the API listening on SMOKE_BASE.
  * Example: SMOKE_BASE=http://127.0.0.1:3000 node server/scripts/smoke-check.mjs
  */
 
@@ -10,7 +10,7 @@ const checks = [
   {
     path: '/api/health',
     expectStatus: 200,
-    expectJson: (j) => j?.ok === true && j?.service === 'infinipot',
+    expectJson: (j) => j?.ok === true && j?.service === 'infini',
   },
   {
     path: '/api/site/visibility',
