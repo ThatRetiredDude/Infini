@@ -4,6 +4,8 @@
 
 ## How to run
 
+**Fresh install — first sign-in (same for local seed and Docker):** **`admin`** / **`ChangeMeImmediately!`** when **`SEED_ADMIN_PASSWORD`** is empty or omitted in `.env`. Set **`SEED_ADMIN_PASSWORD`** yourself if you do not want the documented bootstrap. After login, complete **Set your password** (new password ≥ 12 characters) before **`/admin`** or **`/api/admin/*`** fully work.
+
 ### Local development
 
 Requirements: **Node.js 20+** and **npm**.
