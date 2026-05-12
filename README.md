@@ -37,7 +37,7 @@ Open **http://localhost:3000** unless you set **`HOST_PORT`** in `.env` for a po
 
 | | |
 | --- | --- |
-| **Bootstrap** | **`admin`** / **`ChangeMeImmediately! |
+| **Bootstrap** | **`admin`** / **`ChangeMeImmediately!'** |
 | **Right after login** | The app forces **Set your password** in the UI. New password must be **at least 12 characters**. Until you finish that step, **`/admin`** and **`/api/admin/*`** return **403** with `password_change_required`. |
 
 ## Documentation
