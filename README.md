@@ -1,18 +1,15 @@
 # Infini
 
-Self-hosted honeypot / monitoring stack (SPA + Express + SQLite). **Work in progress** — behavior and APIs can change; treat production deployments as experimental until you’ve reviewed config.
+Self-hosted honeypot / monitoring stack (SPA + Express + SQLite). **Work in progress** — behavior and APIs can change.
 
 ## Purpose
 
 Decoy and instrumented routes, data-room-style exploration, access logging, enrichment, **Security Hub**, and alerts. Shipped as **one Docker container** with SQLite on disk—no Postgres, no Redis, no separate auth service.
 
-Internally the codename **Maxwell International (MI)** still shows up in tokens (`mi_session`, etc.); the public name is **Infini**.
-
 ## Features (short)
 
 - **Security & monitoring** — Honeypot-style endpoints, data room, logging, alerts, optional AI log review (details in [docs/architecture.md](docs/architecture.md)).
-- **Blog** — Optional; casual content—or pad the site with nonsense if you want a busier-looking surface.
-- **Public cover** — Donations-style page is shell only, not the point of the project.
+- **Blog** — Optional; Share you opinions on social media to lure attackers to your self-hosted site, pad the site with nonsense if you want a busier-looking surface.
 
 More surfaces over time. **Full detail:** [Documentation](docs/README.md).
 
