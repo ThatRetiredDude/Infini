@@ -26,16 +26,32 @@ npm run dev
 - Frontend (Vite): <http://localhost:5173>
 - API (Express): <http://localhost:3000/api>
 
-Default admin username comes from `SEED_ADMIN_USERNAME` in `.env` (defaults to `admin`).
+**First admin:**
+
+- **`SEED_ADMIN_USERNAME`** defaults to **`admin`**; **`SEED_ADMIN_PASSWORD`** is **optional**.
+- Omitting the env password prints a one-time **`[seed-admin] BOOTSTRAP_PASSWORD=…`** line to stderr when you run `npm run db:seed-admin`.
+
+**After Sign in:**
+
+- The SPA prompts **Set your password** until you submit a replacement. New passwords must be at least **12** characters (`POST /api/auth/change-password`).
+- Until then, **`/api/admin/*`** returns **`403`** with **`password_change_required`**. Only **bcrypt** hashes are stored in SQLite (`users.password_change_required` tracks the gate).
 
 ### Docker (production-like)
 
+Rebuilds (`--build`) replace image layers only. SQLite, uploads, and logs live in the Compose volume **`infinipot-data`** (mounted at **`/data`** in the container); rebuilding does not wipe that data unless you remove the volume on purpose.
+
+On **each container start**, **`docker-entrypoint.sh`** runs the same flow as **`npm run db:seed-admin`**, then starts the API (`tini`, then `node server/index.js`). If **no admin** exists yet, one is created with `SEED_ADMIN_USERNAME`, optional `SEED_ADMIN_PASSWORD`, optional `SEED_ADMIN_EMAIL`. With **no env password**, a random bootstrap password is logged once (see **`docker logs infinipot`** and search for **`BOOTSTRAP_PASSWORD=`**). If you **set** `SEED_ADMIN_PASSWORD`, it is bcrypt-hashed like any password and never printed. Every **newly seeded** admin starts with **`password_change_required`** and must complete **Set your password** in the app before admin APIs work. Idempotent seed: if an admin already exists, the script skips.
+
 ```bash
-cp .env.example .env   # fill JWT_SECRET, INTEGRATION_ENCRYPTION_KEY, SEED_ADMIN_*, etc.
+cp .env.example .env   # JWT_SECRET, INTEGRATION_ENCRYPTION_KEY; optional SEED_ADMIN_*
 docker compose up --build -d
 ```
 
-Open <http://localhost:3000>. Persistent data lives in the `infinipot-data` volume (`/data` in the container: SQLite, uploads, access-log CSV mirror).
+Open **http://localhost:3000** unless you set a different **`HOST_PORT`** in `.env` (see [`docker-compose.yml`](docker-compose.yml)).
+
+For production **either** rely on tightly controlled orchestration logs when using bootstrap output **or** set `SEED_ADMIN_PASSWORD` in `.env` so the initial secret never appears in logs.
+
+To reinstall from scratch (new SQLite and uploads), remove the named volume deliberately (destructive): `docker compose down`, then `docker volume rm …` for your `infinipot-data` volume (check `docker volume ls`; Compose often prefixes the volume name with the project directory).
 
 ### Smoke check (optional)
 
@@ -65,7 +81,7 @@ It runs as a **single Docker container** with **SQLite on disk** — no Postgres
 │                       InfiniPot container                        │
 │                                                                  │
 │  Node 20 / Express ─────────────────────────────────────────┐    │
-│   ├─ /api/auth/*       local username+password, JWT+cookie  │    │
+│   ├─ /api/auth/*       login, me, change-password; bcrypt; JWT+cookie   │    │
 │   ├─ /api/blog/* + /api/carousel   public surfaces (when visibility allows)  │    │
 │   ├─ /api/site/visibility          page + API gates (home/blog/donations)    │    │
 │   ├─ /api/secrets/*    monitored endpoints + data room      │    │
@@ -98,9 +114,9 @@ The legacy "AI Brief" framework has been repurposed: instead of generating dossi
 
 This repo replaces an earlier codebase (historical Maxwell International tooling). Current **shipping** scope:
 
-- SQLite-backed auth, integrations (encrypted credentials), audits, blog + carousel APIs, SPA with page visibility gates.
+- SQLite-backed auth (bcrypt passwords, optional random seed bootstrap, first-login **Set your password** rotation; `password_change_required` gate on `/api/admin/*`), integrations (encrypted credentials), audits, blog + carousel APIs, SPA with page visibility gates.
 - Monitored endpoints (`/api/secrets`, standalone scanner URLs), data-room activity (`/api/secrets/explore`), access logging (`access_log`), alert rules engine, AI input guard + xAI-driven **AI Log Review**.
-- Docker single-process deployment with persisted `/data` volume.
+- Docker single-process deployment (`docker-entrypoint.sh` seeds admin once), persisted `/data` volume.
 
 ## Disclaimer
 

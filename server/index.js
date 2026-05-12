@@ -13,8 +13,12 @@ import { closeDb } from './db.js';
 import {
   attachUser,
   requireAdmin,
+  requireAuth,
   findUserByUsername,
+  findUserById,
   verifyPassword,
+  changeOwnPassword,
+  MIN_NEW_PASSWORD_LENGTH,
   issueSession,
   revokeSession,
   getCookieOptions,
@@ -185,6 +189,53 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       role: user.role,
       is_admin: !!user.is_admin,
       email: user.email,
+      password_change_required: !!user.password_change_required,
+    },
+  });
+});
+
+const changePasswordLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/api/auth/change-password', changePasswordLimiter, requireAuth, async (req, res) => {
+  const { current_password, new_password } = req.body || {};
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: 'password_fields_required' });
+  }
+  const outcome = await changeOwnPassword(req.user.id, req.user.sessionId, current_password, new_password);
+
+  if (outcome.error === 'password_too_weak') {
+    return res.status(400).json({
+      error: outcome.error,
+      min_length: MIN_NEW_PASSWORD_LENGTH,
+    });
+  }
+  if (outcome.error === 'invalid_current_password') {
+    return res.status(401).json({ error: outcome.error });
+  }
+  if (outcome.error === 'same_password') {
+    return res.status(400).json({ error: outcome.error });
+  }
+  if (outcome.error) {
+    return res.status(500).json({ error: 'password_change_failed' });
+  }
+
+  const u = findUserById(req.user.id);
+  auditReq(req, { actionType: 'auth.password_change' });
+
+  res.json({
+    ok: true,
+    user: {
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      is_admin: !!u.is_admin,
+      email: u.email,
+      password_change_required: !!u.password_change_required,
     },
   });
 });
@@ -206,6 +257,7 @@ app.get('/api/auth/me', (req, res) => {
       username: req.user.username,
       role: req.user.role,
       is_admin: req.user.is_admin,
+      password_change_required: !!req.user.password_change_required,
     },
   });
 });
@@ -267,7 +319,9 @@ app.get('/api/mi-verify', (req, res) => {
 
 // Serve build output in production, plus uploaded files.
 const distDir = path.join(ROOT, 'dist');
-const uploadsDir = path.join(ROOT, 'data', 'uploads');
+const uploadsDir = process.env.UPLOADS_DIR
+  ? path.resolve(process.env.UPLOADS_DIR)
+  : path.join(ROOT, 'data', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
 

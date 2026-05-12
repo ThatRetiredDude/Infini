@@ -7,6 +7,8 @@ import { sha256Hex } from './crypto.js';
 const COOKIE_NAME = process.env.COOKIE_NAME || 'mi_session';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
+const MIN_PASSWORD_LENGTH = 12;
+
 function getJwtSecret() {
   const s = process.env.JWT_SECRET;
   if (!s || s.length < 32) {
@@ -36,7 +38,13 @@ export async function verifyPassword(plain, hash) {
 /**
  * Create a user row.
  */
-export async function createUser({ username, email = null, password, role = 'user' }) {
+export async function createUser({
+  username,
+  email = null,
+  password,
+  role = 'user',
+  passwordChangeRequired = false,
+}) {
   if (!username || !password) throw new Error('username and password are required');
   if (!['user', 'journalist', 'admin'].includes(role)) {
     throw new Error(`invalid role: ${role}`);
@@ -44,10 +52,11 @@ export async function createUser({ username, email = null, password, role = 'use
   const id = uuidv4();
   const password_hash = await hashPassword(password);
   const is_admin = role === 'admin' ? 1 : 0;
+  const pwdChg = passwordChangeRequired ? 1 : 0;
   run(
-    `INSERT INTO users (id, username, email, password_hash, role, is_admin)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, username, email, password_hash, role, is_admin],
+    `INSERT INTO users (id, username, email, password_hash, role, is_admin, password_change_required)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, username, email, password_hash, role, is_admin, pwdChg],
   );
   return getOne(`SELECT * FROM users WHERE id = ?`, [id]);
 }
@@ -90,6 +99,43 @@ export function revokeSession(sessionId) {
     `UPDATE user_sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
     [sessionId],
   );
+}
+
+/** Revoke all other sessions for this user (e.g. after password change). */
+export function revokeOtherSessions(userId, exceptSessionId) {
+  run(
+    `UPDATE user_sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE user_id = ? AND id != ? AND revoked_at IS NULL`,
+    [userId, exceptSessionId],
+  );
+}
+
+/**
+ * @returns {Promise<{ ok: true } | { error: string }>}
+ */
+export async function changeOwnPassword(userId, sessionId, currentPassword, newPassword) {
+  const plainNew = String(newPassword ?? '');
+  if (plainNew.length < MIN_PASSWORD_LENGTH) {
+    return { error: 'password_too_weak' };
+  }
+  const user = findUserById(userId);
+  if (!user) return { error: 'user_not_found' };
+
+  const currentOk = await verifyPassword(String(currentPassword ?? ''), user.password_hash);
+  if (!currentOk) return { error: 'invalid_current_password' };
+
+  const sameAsOld = await verifyPassword(plainNew, user.password_hash);
+  if (sameAsOld) return { error: 'same_password' };
+
+  const password_hash = await hashPassword(plainNew);
+  run(
+    `UPDATE users SET password_hash = ?, password_change_required = 0,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE id = ?`,
+    [password_hash, userId],
+  );
+  if (sessionId) revokeOtherSessions(userId, sessionId);
+  return { ok: true };
 }
 
 export function getCookieOptions() {
@@ -136,6 +182,7 @@ export function attachUser(req, _res, next) {
       role: user.role,
       is_admin: !!user.is_admin,
       sessionId: decoded.sid,
+      password_change_required: !!user.password_change_required,
     };
   } catch {
     // bad/expired token — just don't attach
@@ -153,7 +200,12 @@ export function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin' && !req.user.is_admin) {
     return res.status(403).json({ error: 'admin_required' });
   }
+  if (req.user.password_change_required) {
+    return res.status(403).json({ error: 'password_change_required' });
+  }
   next();
 }
+
+export const MIN_NEW_PASSWORD_LENGTH = MIN_PASSWORD_LENGTH;
 
 export const AUTH_COOKIE_NAME = COOKIE_NAME;

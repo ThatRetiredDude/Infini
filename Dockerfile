@@ -40,6 +40,8 @@ COPY --from=build --chown=infinipot:infinipot /app/server ./server
 COPY --from=build --chown=infinipot:infinipot /app/package.json ./package.json
 COPY --from=build --chown=infinipot:infinipot /app/index.html ./index.html
 
+COPY --chmod=755 --chown=infinipot:infinipot docker-entrypoint.sh ./docker-entrypoint.sh
+
 # Persisted data location (SQLite, uploads, and access CSV mirror) lives under /data
 RUN mkdir -p /data/uploads /data/logs \
     && chown -R infinipot:infinipot /data
@@ -51,5 +53,5 @@ USER infinipot
 
 EXPOSE 3000
 
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "./docker-entrypoint.sh"]
 CMD ["node", "server/index.js"]

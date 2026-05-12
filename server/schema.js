@@ -19,7 +19,8 @@ const STATEMENTS = [
     ai_disabled_reason TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-    last_login_at TEXT
+    last_login_at TEXT,
+    password_change_required INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
 
@@ -297,6 +298,17 @@ export function ensureSchema() {
     for (const key of DEFAULT_PAGE_KEYS) {
       ins.run(key);
     }
+    migrateUsersPasswordChangeRequired(db);
   });
   tx();
+}
+
+function migrateUsersPasswordChangeRequired(db) {
+  const cols = db.prepare(`PRAGMA table_info(users)`).all();
+  const has = cols.some((c) => c.name === 'password_change_required');
+  if (!has) {
+    db.exec(
+      `ALTER TABLE users ADD COLUMN password_change_required INTEGER NOT NULL DEFAULT 0`,
+    );
+  }
 }

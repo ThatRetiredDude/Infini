@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import AuthModal from './components/AuthModal.jsx';
+import ChangePasswordGate from './components/ChangePasswordGate.jsx';
 import DataRoomIndex from './components/DataRoomIndex.jsx';
 import HomePage from './pages/Home.jsx';
 import BlogList from './pages/Blog.jsx';
@@ -128,7 +129,7 @@ export default function App() {
           <div className="ml-auto flex items-center gap-2 text-sm">
             {authChecked && user ? (
               <>
-                {(user.role === 'admin' || user.is_admin) && (
+                {(user.role === 'admin' || user.is_admin) && !user.password_change_required && (
                   <button type="button" className="btn-ghost" onClick={() => navigate('/admin')}>
                     Admin
                   </button>
@@ -180,7 +181,7 @@ export default function App() {
           ) : (
             <PageMuted navigate={navigate} title="Donations unavailable" />
           ))}
-        {route.route === ROUTES.ADMIN && (
+        {route.route === ROUTES.ADMIN && !(user?.password_change_required) && (
           <Suspense
             fallback={
               <div className="max-w-6xl mx-auto p-16 text-center text-ink-400 text-sm">
@@ -196,6 +197,11 @@ export default function App() {
               navigate={navigate}
             />
           </Suspense>
+        )}
+        {route.route === ROUTES.ADMIN && user?.password_change_required && (
+          <div className="max-w-lg mx-auto px-4 py-20 text-center text-ink-400 text-sm">
+            Set your administrator password using the prompt above before opening the console.
+          </div>
         )}
       </main>
 
@@ -214,6 +220,17 @@ export default function App() {
           setAuthOpen(false);
         }}
       />
+
+      {user?.password_change_required && (
+        <ChangePasswordGate
+          user={user}
+          onSuccess={(updated) => setUser(updated)}
+          onSignedOut={() => {
+            setUser(null);
+            navigate('/');
+          }}
+        />
+      )}
 
       <DataRoomIndex />
     </div>

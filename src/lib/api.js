@@ -41,3 +41,7 @@ export async function login(username, password) {
 export async function logout() {
   return api.post('/api/auth/logout');
 }
+
+export async function changePassword(current_password, new_password) {
+  return api.post('/api/auth/change-password', { current_password, new_password });
+}
