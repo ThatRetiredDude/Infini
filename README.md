@@ -4,7 +4,18 @@
 
 ## How to run
 
-**Fresh install — first sign-in (same for local seed and Docker):** **`admin`** / **`ChangeMeImmediately!`** when **`SEED_ADMIN_PASSWORD`** is empty or omitted in `.env`. Set **`SEED_ADMIN_PASSWORD`** yourself if you do not want the documented bootstrap. After login, complete **Set your password** (new password ≥ 12 characters) before **`/admin`** or **`/api/admin/*`** fully work.
+### First admin account
+
+This applies to **local** `npm run db:seed-admin` and **Docker**, where **`docker-entrypoint.sh`** runs the **same seed script** before `node server/index.js`.
+
+| | |
+| --- | --- |
+| **Created when** | The database has **no** admin row yet (`role = admin` or `is_admin`). If one exists, seed **exits quietly** — it does **not** replace users. |
+| **Username** | **`SEED_ADMIN_USERNAME`** from `.env`, default **`admin`**. |
+| **Initial password** | **`SEED_ADMIN_PASSWORD`** if set and non-empty in `.env`. If **unset or blank**, **`ChangeMeImmediately!`**. (Stored as bcrypt only.) |
+| **After first sign-in** | Complete **Set your password** in the SPA (**new** password **≥ 12** characters). Until then, **`/admin`** and **`/api/admin/*`** respond **`403`** (`password_change_required`). |
+
+**Troubleshooting:** Use **`COOKIE_SECURE=true`** only behind **HTTPS**; leave **`false`/unset on HTTP** (e.g. `http://localhost` Docker). If **`admin`**’s hash no longer matches the password you expect, run seed **once** with **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** plus the desired **`SEED_ADMIN_PASSWORD`** (or empty for **`ChangeMeImmediately!`**), then **remove** that variable — details in [`.env.example`](.env.example).
 
 ### Local development
 
@@ -24,43 +35,26 @@ npm run db:seed-admin
 npm run dev
 ```
 
-**`npm run db:init`** is optional: it only applies the SQLite schema, same as the first line inside **`db:seed-admin`** and the **`ensureSchema()`** call in **`server/index.js`**, which runs on every API boot. You still need **`db:seed-admin`** (or the Docker entrypoint) once to create an admin user if none exists.
+**`npm run db:init`** is optional — the schema is applied by **`db:seed-admin`** and on every API boot (`ensureSchema()`). Use **First admin account** above for bootstrap username/password after seed.
 
-- Frontend (Vite): <http://localhost:5173> (proxies `/api` and `/uploads` to the API on port 3000)
-- API (Express): <http://localhost:3000/api> (use 5173 in dev so the SPA and proxies stay aligned)
-
-**First admin (bootstrap):**
-
-- **Username:** **`admin`** unless you set **`SEED_ADMIN_USERNAME`** in `.env`.
-- **Password:** **`ChangeMeImmediately!`** when **`SEED_ADMIN_PASSWORD`** is unset or blank (standard bootstrap — **change it immediately** via the SPA after sign-in).
-- Optionally set **`SEED_ADMIN_PASSWORD`** in `.env` to use your own initial secret instead; it is bcrypt-hashed and never printed.
-
-**After Sign in:**
-
-- The SPA prompts **Set your password** until you submit a replacement. New passwords must be at least **12** characters (`POST /api/auth/change-password`).
-- Until then, **`/api/admin/*`** returns **`403`** with **`password_change_required`**. Only **bcrypt** hashes are stored in SQLite (`users.password_change_required` tracks the gate).
-
-**Troubleshooting sign-in:**
-
-- Session cookies are **Secure** only when **`COOKIE_SECURE=true`**. Leave unset or `false` for **HTTP** (typical `http://localhost` Docker). Use **`COOKIE_SECURE=true`** when the site is served over **HTTPS**.
-- If credentials should work but an **old `admin` row** still has a different hash, `seed-admin` skips by design. Set **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** for **one** container start (or one `npm run db:seed-admin`), with **`SEED_ADMIN_PASSWORD`** set as desired (or empty for the documented bootstrap), then **remove** the variable so future restarts do not reset the password.
+- **UI:** <http://localhost:5173> — proxies **`/api`** and **`/uploads`** to the API on port 3000. Sign in with the seeded credentials from **First admin account**.
 
 ### Docker (production-like)
 
-Rebuilds (`--build`) replace image layers only. SQLite, uploads, and logs live in the Compose volume **`infinipot-data`** (mounted at **`/data`** in the container); rebuilding does not wipe that data unless you remove the volume on purpose.
+Image rebuilds do **not** remove data; SQLite and uploads persist in the Compose volume **`infinipot-data`** (mounted **`/data`**) unless you delete that volume.
 
-On **each container start**, **`docker-entrypoint.sh`** runs the same flow as **`npm run db:seed-admin`**, then starts the API (`tini`, then `node server/index.js`). If **no admin** exists yet, one is created using **`admin`** / **`ChangeMeImmediately!`** (unless you override with **`SEED_ADMIN_*`** in `.env`). With **`password_change_required`**, admin APIs stay locked until **Set your password** completes in the SPA. Idempotent seed: if an admin already exists, the script skips.
+Each container start: **`docker-entrypoint.sh`** runs seed (**First admin account**), then the API (**`tini`** → **`node server/index.js`**).
 
 ```bash
-cp .env.example .env   # JWT_SECRET, INTEGRATION_ENCRYPTION_KEY; set SEED_ADMIN_PASSWORD for a non-default bootstrap
+cp .env.example .env   # JWT_SECRET, INTEGRATION_ENCRYPTION_KEY, optional SEED_ADMIN_*
 docker compose up --build -d
 ```
 
-Open **http://localhost:3000** unless you set a different **`HOST_PORT`** in `.env` (see [`docker-compose.yml`](docker-compose.yml)). First login: **`admin`** / **`ChangeMeImmediately!`** (unless overridden), then complete **Set your password**.
+Open **`http://localhost:3000`**, or the host port from **`HOST_PORT`** in `.env` ([`docker-compose.yml`](docker-compose.yml)). Sign-in is always as defined in **First admin account** — not duplicated here.
 
-For internet-facing installs, replace the bootstrap **`SEED_ADMIN_PASSWORD`** — or **`ChangeMeImmediately!`** — promptly; the SPA forces rotation before admin APIs unlock.
+On the public Internet, set a strong **`SEED_ADMIN_PASSWORD`**; the documented bootstrap is predictable.
 
-To reinstall from scratch (new SQLite and uploads), remove the named volume deliberately (destructive): `docker compose down`, then `docker volume rm …` for your `infinipot-data` volume (check `docker volume ls`; Compose often prefixes the volume name with the project directory).
+To reinstall from scratch: `docker compose down`, then **`docker volume rm …`** matching your **`…_infinipot-data`** volume (`docker volume ls`; Compose prefixes by project).
 
 ### Smoke check (optional)
 
