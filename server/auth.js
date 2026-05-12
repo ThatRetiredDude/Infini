@@ -139,10 +139,10 @@ export async function changeOwnPassword(userId, sessionId, currentPassword, newP
 }
 
 export function getCookieOptions() {
-  const isProd = process.env.NODE_ENV === 'production';
-  const secure = process.env.COOKIE_SECURE
-    ? process.env.COOKIE_SECURE === 'true'
-    : isProd;
+  // Secure cookies only when COOKIE_SECURE=true. Default false so plain HTTP (e.g.
+  // localhost Docker with NODE_ENV=production) still stores the session cookie.
+  // Behind HTTPS terminating TLS, set COOKIE_SECURE=true in .env.
+  const secure = process.env.COOKIE_SECURE === 'true';
   return {
     httpOnly: true,
     secure,

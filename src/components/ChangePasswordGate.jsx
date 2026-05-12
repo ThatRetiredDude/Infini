@@ -30,6 +30,10 @@ export default function ChangePasswordGate({ user, onSuccess, onSignedOut }) {
         setError(`Use at least ${err.data.min_length} characters for the new password.`);
       } else if (code === 'invalid_current_password') {
         setError('Current password is incorrect.');
+      } else if (code === 'authentication_required') {
+        setError(
+          'Your session was not sent by the browser (common with Secure cookies over HTTP). Set COOKIE_SECURE=false in .env or use HTTPS, then sign in again.',
+        );
       } else if (code === 'same_password') {
         setError('Choose a password different from your current one.');
       } else {

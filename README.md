@@ -40,6 +40,11 @@ npm run dev
 - The SPA prompts **Set your password** until you submit a replacement. New passwords must be at least **12** characters (`POST /api/auth/change-password`).
 - Until then, **`/api/admin/*`** returns **`403`** with **`password_change_required`**. Only **bcrypt** hashes are stored in SQLite (`users.password_change_required` tracks the gate).
 
+**Troubleshooting sign-in:**
+
+- Session cookies are **Secure** only when **`COOKIE_SECURE=true`**. Leave unset or `false` for **HTTP** (typical `http://localhost` Docker). Use **`COOKIE_SECURE=true`** when the site is served over **HTTPS**.
+- If credentials should work but an **old `admin` row** still has a different hash, `seed-admin` skips by design. Set **`SEED_ADMIN_OVERWRITE_PASSWORD=1`** for **one** container start (or one `npm run db:seed-admin`), with **`SEED_ADMIN_PASSWORD`** set as desired (or empty for the documented bootstrap), then **remove** the variable so future restarts do not reset the password.
+
 ### Docker (production-like)
 
 Rebuilds (`--build`) replace image layers only. SQLite, uploads, and logs live in the Compose volume **`infinipot-data`** (mounted at **`/data`** in the container); rebuilding does not wipe that data unless you remove the volume on purpose.

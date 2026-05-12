@@ -245,7 +245,13 @@ app.post('/api/auth/logout', (req, res) => {
     revokeSession(req.user.sessionId);
     auditReq(req, { actionType: 'auth.logout' });
   }
-  res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
+  const co = getCookieOptions();
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    path: '/',
+    secure: co.secure,
+    sameSite: co.sameSite,
+    domain: co.domain,
+  });
   res.json({ ok: true });
 });
 
