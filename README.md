@@ -1,56 +1,119 @@
 # Infini
 
-Self-hosted honeypot / monitoring stack (SPA + Express + SQLite). **Work in progress** — behavior and APIs can change.
+**Self-hosted honeypot and security monitoring made simple.** One Docker container. No complex setup.
 
-## Purpose
+## What is Infini?
 
-Decoy and instrumented routes, data-room-style exploration, access logging, enrichment, **Security Hub**, and alerts. Shipped as **one Docker container** with SQLite on disk—no Postgres, no Redis, no separate auth service.
+Infini turns your server into a smart trap for hackers, bots, and scanners. It creates realistic-looking fake files, login pages, admin tools, and even an endless "data room" full of documents. 
 
-## Features (short)
+When someone tries to break in or steal information, Infini quietly records:
+- Who they are (IP address, location, organization)
+- What they tried to access
+- When it happened
 
-- **Security & monitoring** — Honeypot-style endpoints, data room, logging, alerts, optional AI log review (details in [docs/architecture.md](docs/architecture.md)).
-- **Blog** — Optional; Share you opinions on social media to lure attackers to your self-hosted site, pad the site with nonsense if you want a busier-looking surface.
+You get a clean dashboard (the Security Hub) to review everything, with maps, charts, alerts, and even optional AI help to analyze the activity.
 
-More surfaces over time. **Full detail:** [Documentation](docs/README.md).
+It's designed for learning, research, or adding an extra layer of visibility to your own servers — all self-hosted and private.
 
-## How to run (Docker)
+## Why Run Infini?
 
-For a honeypot on your own machine / lab network:
+- **Catches real attacks** — Automated scanners hit these lures constantly.
+- **See the full picture** — IP enrichment, repeat offender tracking, firewall export tools.
+- **Alerts when it matters** — Email, Discord, Telegram, or webhooks.
+- **Optional extras** — Real SSH/Telnet honeypot (Cowrie), blog, multi-factor auth.
+- **Zero hassle** — Single Docker container with SQLite. No Postgres, Redis, or separate services.
+
+## Quick Start (5 Minutes)
 
 ```bash
 git clone https://github.com/ThatRetiredDude/Infini.git
 cd Infini
 cp .env.example .env
-```
-
-**Docker Compose:** If you omit **`JWT_SECRET`** or **`INTEGRATION_ENCRYPTION_KEY`**, or set invalid values (JWT shorter than 32 characters; integration key not 64 hex chars), the container [**entrypoint**](docker-entrypoint.sh) generates secrets on first boot and persists them under **`/data/.secrets/`** on the Compose volume (you will see one-line notices on stderr — secrets are never logged). Valid values in `.env` always win. Pin secrets in `.env` when you want portability or reproducible deploys.
-
-Optional **dev/lab only**: To wipe the SQLite file once before seed runs, set **both** `INFINI_RESET_DATABASE=1` and `INFINI_CONFIRM_DATABASE_RESET=YES`, then remove those flags after use. This does **not** run automatically when rotating secrets. Details: [docs/configuration.md](docs/configuration.md).
-
-```bash
 docker compose up -d --build
 ```
 
-Open **http://localhost:3000** unless you set **`HOST_PORT`** in `.env` for a port conflict.
+Open **http://localhost:3000**
 
-## How to log in
+**First login:**
+- Username: `admin`
+- Password: `ChangeMeImmediately!` (include the exclamation mark)
 
+<<<<<<< HEAD
 | | |
 | --- | --- |
 | **Bootstrap** | **`admin`** / **`ChangeMeImmediately!'** |
 | **Right after login** | The app forces **Set your password** in the UI. New password must be **at least 12 characters**. Until you finish that step, **`/admin`** and **`/api/admin/*`** return **403** with `password_change_required`. |
+=======
+The system will immediately force you to set a new password (12+ characters). After that, the admin area unlocks.
+>>>>>>> V1.2
 
-## Documentation
+That's it. Your honeypot is live and logging.
 
-- [Configuration (`env`)](docs/configuration.md)
-- [Architecture & monitoring](docs/architecture.md)
-- [Operations (health, smoke)](docs/operations.md)
-- [Security & deployment (CORS, cookies, proxies)](docs/security-and-deployment.md)
+## Every Lure Explained Simply
 
-## Disclaimer
+Infini includes dozens of realistic traps. Here they are in plain English:
 
-Infini is **research / educational** software—not a complete security or compliance program, and not a substitute for WAFs, edge rate limits, or lawful use policies. **Provided as-is, without warranty of any kind.** You are solely responsible for your deployment and for complying with applicable laws. Authors and contributors are **not liable** for damages or losses arising from use of this software.
+**Fake Secret Files (scanners love these)**
+- `/.env` — Pretends to be your app's hidden configuration file with passwords.
+- `/.git/config` — Looks like a real Git code repository with private links.
+- `/.aws/credentials` — Fake Amazon Web Services keys.
+- `/.docker/config.json` — Docker login credentials.
+- `/backup*` and `/dump.sql` — Lists of fake database backup files.
 
-## License
+**Admin & Database Logins**
+- `/wp-admin`, `/wp-login.php` — WordPress admin login page.
+- `/phpmyadmin*` — Popular database management tool.
+- `/adminer*` — Another database admin login.
+- `/jenkins*` — Jenkins build server login.
+- `/grafana/`, `/login` — Grafana monitoring dashboard.
+- `/gitlab/`, `/users/sign_in*` — GitLab code hosting login.
+- `/actuator*` — Spring Boot internal debug pages (health, beans, env).
+- `/owa*` — Outlook Web App email login.
+- `/solr*` — Solr search engine admin console.
+- `/console*`, `/signin` — AWS web console login.
+- `/ecp*` — Microsoft Exchange admin center.
 
-[Apache License 2.0](LICENSE).
+**API & Internal Endpoints**
+- `/api/keys*` — API key management that returns "unauthorized".
+- `/api/internal/debug*` — Fake server debug information.
+- `/api/secrets/system-prompt` — Looks like an AI model's hidden instructions.
+- `/api/secrets/internal/dossier-dump` — "Internal company records" dump.
+- `/api/secrets/eval` (and results) — Job evaluation endpoints.
+
+**Info & Security Files**
+- `/.well-known/security.txt` — Security contact file (contains a hidden trap).
+- `/robots.txt` — Tells bots about "private" paths they shouldn't visit.
+
+**Fake Corporate Intranet**
+- `/intranet/login` — Company employee login page.
+- `/intranet/dashboard` — Dashboard with links to HR, Finance, and IT.
+- `/intranet/hr/*`, `/intranet/finance/*`, `/intranet/it/*` — Realistic internal pages that accept forms and log everything.
+
+**The Infinite Data Room Maze**
+- `/api/secrets/explore/*` — Over a million procedurally generated pages. Looks like a real private data room. Repeat visitors get a CAPTCHA. Designed to waste attackers' time indefinitely.
+
+**Bonus Network Services (optional)**
+- Ports 21 (FTP), 3306 (MySQL), 5432 (PostgreSQL) — Fake service banners that log connection attempts.
+
+Every single one of these returns realistic content and records the visit with full details.
+
+## Next Steps & Full Documentation
+
+For complete guides including:
+- Detailed configuration options
+- How the Security Hub, alerts, and AI review work
+- Enabling the SSH honeypot (Cowrie)
+- Blog and page visibility features
+- Security hardening and deployment behind proxies
+
+Visit the **[Documentation](docs/README.md)** — it has hyperlinked tables of contents and step-by-step instructions for every feature.
+
+## Important Notes
+
+Infini is **research and educational** software. It is not a complete security solution. Always follow the law in your jurisdiction and combine it with proper firewalls, rate limiting, and other protections.
+
+Provided as-is under the Apache 2.0 license. See [LICENSE](LICENSE) for details.
+
+---
+
+**Ready to explore?** Start the container, log in, and check out the Security Hub to see your first lure hits!

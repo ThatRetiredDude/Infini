@@ -1,35 +1,64 @@
 # Operations
 
-## Health check
+Day-to-day running, health checks, and maintenance.
+
+## Contents
+
+- [Health Check](#health-check)
+- [Smoke Tests](#smoke-tests)
+- [Logs and Data Locations](#logs-and-data-locations)
+- [Backups](#backups)
+- [Updating](#updating)
+
+## Health Check
 
 **GET `/api/health`**
 
-Returns JSON, for example:
+Returns JSON status including Cowrie status when enabled.
 
-```json
-{ "ok": true, "service": "infini", "env": "production" }
-```
+Used by Docker Compose healthcheck.
 
-- **`ok`** — process is up.
-- **`service`** — always `infini` in current releases (update monitors if you migrated from older `infinipot` strings).
-- **`env`** — `NODE_ENV` value.
+Example response includes service name, environment, and optional Cowrie metadata.
 
-Docker Compose uses this endpoint for the container [healthcheck](../docker-compose.yml).
+## Smoke Tests
 
-## Smoke tests
-
-With the API listening (host or container port):
+Run from host:
 
 ```bash
 SMOKE_BASE=http://127.0.0.1:3000 npm run smoke
 ```
 
-Or:
+Or directly:
 
 ```bash
-SMOKE_BASE=http://127.0.0.1:3000 node server/scripts/smoke-check.mjs
+node server/scripts/smoke-check.mjs
 ```
 
-Default base if unset: `http://127.0.0.1:${PORT||3000}`.
+Verifies public routes, admin auth requirements, and several lure responses.
 
-The script hits public routes (health, visibility, blog, carousel, beacon), verifies admin APIs return **401** without a session, and performs a few decoy-route checks—see [`server/scripts/smoke-check.mjs`](../server/scripts/smoke-check.mjs) for the exact list.
+## Logs and Data Locations
+
+Inside the container (persisted via `infini-data` volume):
+
+- SQLite DB: `/data/infini.sqlite`
+- Uploads: `/data/uploads/`
+- Access log CSV mirror: `/data/logs/`
+- Secrets (auto-generated): `/data/.secrets/`
+- Cowrie home (if enabled): `/data/cowrie/`
+
+## Backups
+
+Simply back up the entire `/data` volume (or bind-mount). 
+
+**Important:** If you rotate `INTEGRATION_ENCRYPTION_KEY`, old encrypted rows become unreadable unless you keep the previous key.
+
+## Updating
+
+Pull latest code, rebuild the image:
+
+```bash
+docker compose pull
+docker compose up -d --build
+```
+
+Database migrations run automatically on startup.

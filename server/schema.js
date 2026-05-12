@@ -3,6 +3,7 @@
 // TEXT for UUIDs (we generate them in JS), and JSON columns are stored as TEXT
 // (we json_decode in code). Booleans are stored as 0/1 integers.
 
+import crypto from 'node:crypto';
 import { getDb } from './db.js';
 
 const STATEMENTS = [
@@ -110,6 +111,30 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_honeypot_ip ON ai_honeypot_hits(ip, hit_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_honeypot_source ON ai_honeypot_hits(source, hit_at DESC)`,
 
+  // ─── network_sensor_events (Cowrie SSH/Telnet/FTP JSON log ingest) ────────
+  `CREATE TABLE IF NOT EXISTS network_sensor_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hit_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    peer_ip TEXT,
+    session_id TEXT,
+    sensor_name TEXT,
+    protocol TEXT,
+    event_type TEXT NOT NULL,
+    cowrie_eventid TEXT UNIQUE NOT NULL,
+    payload_json TEXT NOT NULL,
+    enrichment TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_net_sensor_hit_at ON network_sensor_events(hit_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_net_sensor_peer ON network_sensor_events(peer_ip, hit_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_net_sensor_event ON network_sensor_events(event_type, hit_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_net_sensor_session ON network_sensor_events(session_id) WHERE session_id IS NOT NULL`,
+
+  `CREATE TABLE IF NOT EXISTS ingest_file_cursor (
+    log_path TEXT PRIMARY KEY,
+    byte_offset INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  )`,
+
   // ─── maze_hits (data-room aggregation, per IP per day) ─────────────────────
   `CREATE TABLE IF NOT EXISTS maze_hits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,7 +192,7 @@ const STATEMENTS = [
   // structured analysis + suggested actions.
   `CREATE TABLE IF NOT EXISTS ai_log_reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    review_type TEXT NOT NULL CHECK (review_type IN ('honeypot','maze','access','ai_flag','alert','mixed')),
+    review_type TEXT NOT NULL CHECK (review_type IN ('honeypot','maze','access','ai_flag','alert','mixed','network')),
     selection TEXT NOT NULL,
     summary_md TEXT,
     suggested_actions TEXT,
@@ -210,7 +235,7 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS security_alert_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('ai_flags','access_log','honeypot','maze')),
+    source TEXT NOT NULL CHECK (source IN ('ai_flags','access_log','honeypot','maze','network_sensor')),
     predicate TEXT NOT NULL,
     channel TEXT NOT NULL CHECK (channel IN ('email','discord','telegram','webhook')),
     recipient TEXT NOT NULL,
@@ -281,6 +306,16 @@ const STATEMENTS = [
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
   )`,
+
+  // ─── site_branding (public name, footer, accent color for rebranding) ───
+  `CREATE TABLE IF NOT EXISTS site_branding (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    brand_name TEXT NOT NULL DEFAULT 'Infini',
+    footer_text TEXT NOT NULL DEFAULT 'Infini · MI',
+    accent_color TEXT NOT NULL DEFAULT '#34d399',
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
+  )`,
 ];
 
 const DEFAULT_PAGE_KEYS = /** @type {const} */ (['home', 'blog', 'donations']);
@@ -298,7 +333,17 @@ export function ensureSchema() {
     for (const key of DEFAULT_PAGE_KEYS) {
       ins.run(key);
     }
+    // Seed default branding row (single row, id=1)
+    const brandIns = db.prepare(
+      `INSERT OR IGNORE INTO site_branding (id, brand_name, footer_text, accent_color, updated_at)
+       VALUES (1, 'Infini', 'Infini · MI', '#34d399', strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+    );
+    brandIns.run();
     migrateUsersPasswordChangeRequired(db);
+    migrateUserSessionsCsrf(db);
+    migrateUsersTotp(db);
+    migrateSecurityAlertRulesNetworkSensor(db);
+    migrateAiLogReviewsNetwork(db);
   });
   tx();
 }
@@ -311,4 +356,97 @@ function migrateUsersPasswordChangeRequired(db) {
       `ALTER TABLE users ADD COLUMN password_change_required INTEGER NOT NULL DEFAULT 0`,
     );
   }
+}
+
+function migrateUserSessionsCsrf(db) {
+  const cols = db.prepare(`PRAGMA table_info(user_sessions)`).all();
+  if (!cols.some((c) => c.name === 'csrf_token')) {
+    db.exec(`ALTER TABLE user_sessions ADD COLUMN csrf_token TEXT`);
+  }
+  const upd = db.prepare(`UPDATE user_sessions SET csrf_token = ? WHERE id = ?`);
+  const rows = db
+    .prepare(
+      `SELECT id FROM user_sessions WHERE (csrf_token IS NULL OR csrf_token = '')
+         AND revoked_at IS NULL`,
+    )
+    .all();
+  for (const r of rows) {
+    upd.run(crypto.randomBytes(32).toString('hex'), r.id);
+  }
+}
+
+function migrateUsersTotp(db) {
+  const cols = db.prepare(`PRAGMA table_info(users)`).all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('totp_enabled')) {
+    db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!names.has('totp_secret_sealed')) {
+    db.exec(`ALTER TABLE users ADD COLUMN totp_secret_sealed TEXT`);
+  }
+  if (!names.has('totp_pending_sealed')) {
+    db.exec(`ALTER TABLE users ADD COLUMN totp_pending_sealed TEXT`);
+  }
+}
+
+/** Recreate security_alert_rules when the CHECK constraint lacks network_sensor (SQLite). */
+function migrateSecurityAlertRulesNetworkSensor(db) {
+  const t = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='security_alert_rules'`)
+    .get();
+  const sql = String(t?.sql || '');
+  if (sql.includes('network_sensor')) return;
+
+  db.exec(`
+    CREATE TABLE security_alert_rules__new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('ai_flags','access_log','honeypot','maze','network_sensor')),
+      predicate TEXT NOT NULL,
+      channel TEXT NOT NULL CHECK (channel IN ('email','discord','telegram','webhook')),
+      recipient TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      cooldown_min INTEGER NOT NULL DEFAULT 5,
+      last_fired_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    INSERT INTO security_alert_rules__new
+      SELECT id, name, source, predicate, channel, recipient, enabled, cooldown_min, last_fired_at, created_by, created_at
+      FROM security_alert_rules;
+    DROP TABLE security_alert_rules;
+    ALTER TABLE security_alert_rules__new RENAME TO security_alert_rules;
+  `);
+}
+
+/** Recreate ai_log_reviews when review_type CHECK lacks 'network'. */
+function migrateAiLogReviewsNetwork(db) {
+  const t = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_log_reviews'`)
+    .get();
+  const sql = String(t?.sql || '');
+  if (sql.includes("'network'")) return;
+
+  db.exec(`
+    CREATE TABLE ai_log_reviews__new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_type TEXT NOT NULL CHECK (review_type IN ('honeypot','maze','access','ai_flag','alert','mixed','network')),
+      selection TEXT NOT NULL,
+      summary_md TEXT,
+      suggested_actions TEXT,
+      model TEXT,
+      raw_response TEXT,
+      generated_by TEXT,
+      generated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      expires_at TEXT,
+      pinned INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO ai_log_reviews__new
+      SELECT id, review_type, selection, summary_md, suggested_actions, model, raw_response,
+             generated_by, generated_at, expires_at, pinned
+      FROM ai_log_reviews;
+    DROP TABLE ai_log_reviews;
+    ALTER TABLE ai_log_reviews__new RENAME TO ai_log_reviews;
+    CREATE INDEX IF NOT EXISTS idx_log_reviews_generated_at ON ai_log_reviews(generated_at DESC);
+  `);
 }

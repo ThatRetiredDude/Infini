@@ -1,15 +1,20 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getOne, run } from './db.js';
 import { sha256Hex } from './crypto.js';
 
 const COOKIE_NAME = process.env.COOKIE_NAME || 'mi_session';
+export const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || 'mi_csrf';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 const MIN_PASSWORD_LENGTH = 12;
 
-function getJwtSecret() {
+export function getJwtSecret() {
   const s = process.env.JWT_SECRET;
   if (!s || s.length < 32) {
     throw new Error('JWT_SECRET must be set and at least 32 characters.');
@@ -18,13 +23,79 @@ function getJwtSecret() {
 }
 
 function cookieMaxAgeMs() {
-  // Parse the same shape jsonwebtoken accepts ('7d', '30m', etc.) into ms.
   const m = String(JWT_EXPIRES_IN).match(/^(\d+)([smhd])$/);
   if (!m) return 7 * 24 * 60 * 60 * 1000;
   const n = Number(m[1]);
   const unit = m[2];
   const mult = unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
   return n * mult;
+}
+
+/** @param {import('express').Request | undefined} req */
+export function cookieSecureForRequest(req) {
+  if (process.env.COOKIE_SECURE === 'true') return true;
+  if (process.env.COOKIE_SECURE === 'auto' && req) {
+    return !!(req.secure || req.get('x-forwarded-proto') === 'https');
+  }
+  return false;
+}
+
+/** @param {import('express').Request | undefined} req */
+export function cookieSameSiteForRequest(req) {
+  const raw = (process.env.COOKIE_SAMESITE || 'lax').toLowerCase();
+  let s = raw === 'strict' ? 'strict' : raw === 'none' ? 'none' : 'lax';
+  if (s === 'none' && !cookieSecureForRequest(req)) {
+    s = 'lax';
+  }
+  return s;
+}
+
+/** @param {import('express').Request | undefined} req */
+export function getCookieOptions(req) {
+  return {
+    httpOnly: true,
+    secure: cookieSecureForRequest(req),
+    sameSite: cookieSameSiteForRequest(req),
+    maxAge: cookieMaxAgeMs(),
+    domain: process.env.COOKIE_DOMAIN || undefined,
+    path: '/',
+  };
+}
+
+/** @param {import('express').Request | undefined} req */
+export function getCsrfCookieOptions(req) {
+  return {
+    httpOnly: false,
+    secure: cookieSecureForRequest(req),
+    sameSite: cookieSameSiteForRequest(req),
+    maxAge: cookieMaxAgeMs(),
+    domain: process.env.COOKIE_DOMAIN || undefined,
+    path: '/',
+  };
+}
+
+/** @param {import('express').Response} res @param {import('express').Request} req */
+export function setAuthCookies(res, req, { token, csrfToken }) {
+  res.cookie(COOKIE_NAME, token, getCookieOptions(req));
+  res.cookie(CSRF_COOKIE_NAME, csrfToken, getCsrfCookieOptions(req));
+}
+
+/** @param {import('express').Response} res @param {import('express').Request} req */
+export function clearAuthCookies(res, req) {
+  const co = getCookieOptions(req);
+  const cco = getCsrfCookieOptions(req);
+  res.clearCookie(COOKIE_NAME, {
+    path: '/',
+    secure: co.secure,
+    sameSite: co.sameSite,
+    domain: co.domain,
+  });
+  res.clearCookie(CSRF_COOKIE_NAME, {
+    path: '/',
+    secure: cco.secure,
+    sameSite: cco.sameSite,
+    domain: cco.domain,
+  });
 }
 
 export async function hashPassword(plain) {
@@ -74,6 +145,7 @@ export function findUserById(id) {
  */
 export function issueSession(user, { ip, userAgent } = {}) {
   const sessionId = uuidv4();
+  const csrfToken = crypto.randomBytes(32).toString('hex');
   const token = jwt.sign(
     {
       sub: user.id,
@@ -86,12 +158,12 @@ export function issueSession(user, { ip, userAgent } = {}) {
   );
   const expiresAt = new Date(Date.now() + cookieMaxAgeMs()).toISOString();
   run(
-    `INSERT INTO user_sessions (id, user_id, token_hash, user_agent, ip, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [sessionId, user.id, sha256Hex(token), userAgent || null, ip || null, expiresAt],
+    `INSERT INTO user_sessions (id, user_id, token_hash, user_agent, ip, expires_at, csrf_token)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [sessionId, user.id, sha256Hex(token), userAgent || null, ip || null, expiresAt, csrfToken],
   );
   run(`UPDATE users SET last_login_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`, [user.id]);
-  return { token, sessionId, expiresAt };
+  return { token, sessionId, expiresAt, csrfToken };
 }
 
 export function revokeSession(sessionId) {
@@ -138,29 +210,16 @@ export async function changeOwnPassword(userId, sessionId, currentPassword, newP
   return { ok: true };
 }
 
-export function getCookieOptions() {
-  // Secure cookies only when COOKIE_SECURE=true. Default false so plain HTTP (e.g.
-  // localhost Docker with NODE_ENV=production) still stores the session cookie.
-  // Behind HTTPS terminating TLS, set COOKIE_SECURE=true in .env.
-  const secure = process.env.COOKIE_SECURE === 'true';
-  return {
-    httpOnly: true,
-    secure,
-    sameSite: 'lax',
-    maxAge: cookieMaxAgeMs(),
-    domain: process.env.COOKIE_DOMAIN || undefined,
-    path: '/',
-  };
-}
-
 /**
  * Express middleware: parse cookie/bearer JWT and attach req.user.
  * Does NOT block unauthenticated requests by itself.
  */
 export function attachUser(req, _res, next) {
   let token = null;
+  let authViaCookie = false;
   if (req.cookies && req.cookies[COOKIE_NAME]) {
     token = req.cookies[COOKIE_NAME];
+    authViaCookie = true;
   } else {
     const h = req.headers.authorization || '';
     if (h.startsWith('Bearer ')) token = h.slice(7);
@@ -184,6 +243,8 @@ export function attachUser(req, _res, next) {
       sessionId: decoded.sid,
       password_change_required: !!user.password_change_required,
     };
+    req.authViaCookie = authViaCookie;
+    req.sessionCsrf = session.csrf_token || '';
   } catch {
     // bad/expired token — just don't attach
   }
@@ -208,4 +269,60 @@ export function requireAdmin(req, res, next) {
 
 export const MIN_NEW_PASSWORD_LENGTH = MIN_PASSWORD_LENGTH;
 
-export const AUTH_COOKIE_NAME = COOKIE_NAME;
+/** Generate a recovery password file (Jellyfin-style) and set it as the user's current password.
+ * Does NOT revoke sessions or set password_change_required.
+ * Only the server operator can read the file. The password in the file is now active.
+ */
+export async function generateRecoveryPassword(username) {
+  if (!username) throw new Error('username is required');
+  const user = findUserByUsername(username);
+  if (!user) throw new Error('user_not_found');
+
+  // Strong temp password (~22 chars)
+  const tempPassword = `${crypto.randomBytes(12).toString('base64url')}${crypto.randomBytes(4).toString('base64url')}`;
+
+  // Actually activate the password so it can be used to sign in (the file is only for the operator).
+  const password_hash = await hashPassword(tempPassword);
+  run(
+    `UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+    [password_hash, user.id],
+  );
+
+  // Resolve secrets dir consistently with DATABASE_FILE convention (Docker: /data, local: ./data)
+  // This ensures writes stay inside the persistent volume and avoids permission errors or
+  // accidental writes outside the intended data directory (security hardening).
+  const dbFile = process.env.DATABASE_FILE;
+  const dataDir = dbFile
+    ? path.dirname(dbFile)
+    : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
+  const SECRETS_DIR = path.join(dataDir, '.secrets');
+
+  fs.mkdirSync(SECRETS_DIR, { recursive: true, mode: 0o700 });
+
+  const safeUsername = String(username).replace(/[^a-zA-Z0-9_-]/g, '');
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const fileName = `recovery-${safeUsername}-${timestamp}.txt`;
+  const filePath = path.join(SECRETS_DIR, fileName);
+
+  const content = [
+    'Infini Password Recovery',
+    '',
+    `Username: ${user.username}`,
+    `New password: ${tempPassword}`,
+    `Generated at: ${new Date().toISOString()}`,
+    '',
+    'Instructions: Use the password above to sign in at the login screen.',
+    'Existing sessions (if any) were not revoked and will remain active until they expire or the user logs out.',
+    'Delete this file after use for security.',
+    '',
+    'This file is only accessible to the server operator (0600 permissions).',
+    'It is written under the data volume and persists across restarts.',
+  ].join('\n');
+
+  fs.writeFileSync(filePath, content, { mode: 0o600 });
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {}
+
+  return { recoveryFile: filePath };
+}

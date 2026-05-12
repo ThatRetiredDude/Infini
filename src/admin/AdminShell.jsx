@@ -6,6 +6,7 @@ import IntegrationsAdmin from './IntegrationsAdmin.jsx';
 import AuditAdmin from './AuditAdmin.jsx';
 import AiLogReviewAdmin from './AiLogReviewAdmin.jsx';
 import PageVisibilityAdmin from './PageVisibilityAdmin.jsx';
+import BrandingAdmin from './BrandingAdmin.jsx';
 
 export default function AdminShell({ user, authChecked, onRequireLogin, sub, navigate }) {
   const [toast, setToast] = useState(null);
@@ -91,6 +92,12 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
               Visibility
             </NavBtn>
             <NavBtn
+              active={section === 'branding'}
+              onClick={() => navigate('/admin/branding')}
+            >
+              Branding
+            </NavBtn>
+            <NavBtn
               active={section === 'integrations'}
               onClick={() => navigate('/admin/integrations')}
             >
@@ -120,6 +127,9 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
           <AdminCard title="Page visibility" onClick={() => navigate('/admin/visibility')}>
             Who can reach home, blog, and donations publicly — plus gated APIs.
           </AdminCard>
+          <AdminCard title="Branding" onClick={() => navigate('/admin/branding')}>
+            Public header name, footer text, and site-wide accent color for the blog and landing pages.
+          </AdminCard>
           <AdminCard title="Blog" onClick={() => navigate('/admin/blog')}>
             Create and publish posts with the TipTap rich editor.
           </AdminCard>
@@ -136,6 +146,7 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
         <SecurityHub
           onNavigate={(path) => navigate(path)}
           onToast={showToast}
+          initialTab={(sub || '').split('/')[1] || ''}
         />
       )}
 
@@ -145,6 +156,7 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
       {section === 'audit' && <AuditAdmin onToast={showToast} />}
       {section === 'ai-review' && <AiLogReviewAdmin onToast={showToast} />}
       {section === 'visibility' && <PageVisibilityAdmin onToast={showToast} />}
+      {section === 'branding' && <BrandingAdmin onToast={showToast} />}
     </div>
   );
 }

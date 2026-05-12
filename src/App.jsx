@@ -6,7 +6,7 @@ import HomePage from './pages/Home.jsx';
 import BlogList from './pages/Blog.jsx';
 import BlogPost from './pages/BlogPost.jsx';
 import Donations from './pages/Donations.jsx';
-import { fetchMe } from './lib/api.js';
+import { fetchMe, logout } from './lib/api.js';
 
 const AdminShell = lazy(() => import('./admin/AdminShell.jsx'));
 
@@ -63,6 +63,25 @@ function PageMuted({ navigate, title }) {
   );
 }
 
+// Simple hex color helpers for dynamic accent variants (no external deps)
+function adjustHex(hex, factor) {
+  const c = hex.replace('#', '');
+  let r = parseInt(c.substring(0, 2), 16);
+  let g = parseInt(c.substring(2, 4), 16);
+  let b = parseInt(c.substring(4, 6), 16);
+  r = Math.max(0, Math.min(255, Math.round(r + 255 * factor)));
+  g = Math.max(0, Math.min(255, Math.round(g + 255 * factor)));
+  b = Math.max(0, Math.min(255, Math.round(b + 255 * factor)));
+  return '#' + [r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+function hexToRgba(hex, alpha) {
+  const c = hex.replace('#', '');
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -72,6 +91,7 @@ export default function App() {
     blog: 'public',
     donations: 'public',
   });
+  const [branding, setBranding] = useState({ brand_name: 'Infini', footer_text: 'Infini · MI', accent_color: '#34d399' });
   const [route, setRoute] = useState(() => parsePath(window.location.pathname));
 
   const navigate = useCallback((path) => {
@@ -99,6 +119,23 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetch('/api/site/branding', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setBranding(data))
+      .catch(() => {});
+  }, []);
+
+  // Apply CSS vars for accent (and derived dim/glow/soft) site-wide
+  useEffect(() => {
+    const root = document.documentElement;
+    const hex = branding.accent_color || '#34d399';
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--accent-dim', adjustHex(hex, -0.15));
+    root.style.setProperty('--accent-glow', adjustHex(hex, 0.2));
+    root.style.setProperty('--accent-soft', hexToRgba(hex, 0.06));
+  }, [branding.accent_color]);
+
   return (
     <div className="min-h-full flex flex-col">
       <header className="border-b border-ink-700 bg-ink-900/80 backdrop-blur sticky top-0 z-30">
@@ -108,7 +145,7 @@ export default function App() {
             onClick={() => navigate('/')}
             className="font-mono text-lg font-semibold text-accent hover:text-accent-glow"
           >
-            Infini
+            {branding.brand_name}
           </button>
           <nav className="flex items-center gap-1 ml-2 text-sm">
             {pageAllowed('blog', pagesVisibility, user) && (
@@ -139,7 +176,7 @@ export default function App() {
                   type="button"
                   className="btn-ghost"
                   onClick={async () => {
-                    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+                    await logout();
                     setUser(null);
                     navigate('/');
                   }}
@@ -159,7 +196,7 @@ export default function App() {
       <main className="flex-1">
         {route.route === ROUTES.HOME &&
           (pageAllowed('home', pagesVisibility, user) ? (
-            <HomePage navigate={navigate} />
+            <HomePage navigate={navigate} branding={branding} />
           ) : (
             <PageMuted navigate={navigate} title="Home unavailable" />
           ))}
@@ -207,7 +244,7 @@ export default function App() {
 
       <footer className="border-t border-ink-700 bg-ink-900/60">
         <div className="max-w-6xl mx-auto px-4 py-6 text-xs text-ink-400 flex flex-wrap items-center justify-between gap-2">
-          <span className="font-mono">Infini · MI</span>
+          <span className="font-mono">{branding.footer_text}</span>
           <span>Access may be logged for compliance and security review.</span>
         </div>
       </footer>

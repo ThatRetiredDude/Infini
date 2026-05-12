@@ -103,7 +103,7 @@ export default function Overview({ toast }) {
   if (loading) return <div className="py-8 text-zinc-500 italic text-sm text-center">Loading overview…</div>;
   if (!data) return null;
 
-  const { ai_flags, mi_access, honeypot, maze, top_ips, sparklines } = data;
+  const { ai_flags, mi_access, honeypot, maze, network_sensor, top_ips, sparklines } = data;
   const mt = mazeStats?.totals || {};
   const countries = geoData?.countries || [];
   const asns = geoData?.asns || [];
@@ -125,6 +125,14 @@ export default function Overview({ toast }) {
           <KpiCard label="HIGH severity"     value={ai_flags?.high_24h?.toLocaleString()}   sub={`${ai_flags?.medium_24h} medium · ${ai_flags?.low_24h} low`} accent="red" />
           <KpiCard label="MI Access (24h)"   value={mi_access?.hits_24h?.toLocaleString()}  sub={`${mi_access?.honeypot_24h} tokenless hits`} accent="amber" />
           <KpiCard label="Monitored Endpoints"   value={honeypot?.hits_24h?.toLocaleString()}   sub={`${honeypot?.hits_7d?.toLocaleString()} last 7d`} accent="red" />
+        </div>
+      </section>
+
+      <section>
+        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Network sensor (Cowrie)</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <KpiCard label="Events (24h)" value={network_sensor?.events_24h?.toLocaleString()} sub={`${network_sensor?.events_7d?.toLocaleString()} last 7d`} accent="amber" />
+          <KpiCard label="Network IPs (window)" value={data.counts?.network_distinct_ips?.toLocaleString()} sub={`${data.counts?.network_events?.toLocaleString()} events in overview window`} accent="cyan" />
         </div>
       </section>
 
@@ -169,12 +177,15 @@ export default function Overview({ toast }) {
       {/* ── Sparklines ── */}
       <section>
         <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">7-Day Trends</div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
             <Sparkline data={sparklines?.flags || []} color="#f87171" label="AI flags" />
           </div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
             <Sparkline data={sparklines?.mi_access || []} color="#fb923c" label="MI access hits" />
+          </div>
+          <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
+            <Sparkline data={sparklines?.network_sensor || []} color="#22d3ee" label="Network sensor events" />
           </div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
             <Sparkline data={sparklines?.maze || []} color="#a78bfa" label="Data room page hits" />

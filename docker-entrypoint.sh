@@ -90,4 +90,9 @@ fi
 export INTEGRATION_ENCRYPTION_KEY="$INT_RESOLVED"
 
 node server/scripts/seed-admin.js
+
+if [ "${INFINI_NETWORK_HONEYPOT_ENABLED:-0}" = "1" ]; then
+  node server/scripts/prepare-cowrie-config.mjs || echo "[entrypoint] prepare-cowrie-config failed (non-fatal)" >&2
+fi
+
 exec "$@"

@@ -87,6 +87,21 @@ function gatherContext(selection) {
     for (const r of rows) lines.push(JSON.stringify({ table: 'ai_input_flags', ...r }));
   }
 
+  const netIds = Array.isArray(selection?.network_ids)
+    ? selection.network_ids.map(Number).filter(Number.isFinite)
+    : [];
+  if (netIds.length) {
+    summaryKeys.push(`network_ids:${netIds.length}`);
+    const ph = inPlaceholders(netIds);
+    const rows = getAll(
+      `SELECT id, hit_at, peer_ip, session_id, sensor_name, protocol, event_type, cowrie_eventid, payload_json, enrichment
+         FROM network_sensor_events WHERE id IN (${ph}) ORDER BY id DESC`,
+      netIds,
+    );
+    lines.push('\n# Network sensor (Cowrie)');
+    for (const r of rows) lines.push(JSON.stringify({ table: 'network_sensor_events', ...r }));
+  }
+
   const extraNotes = typeof selection?.notes === 'string' ? selection.notes : '';
   const blob =
     [...lines, extraNotes && `\n# Admin notes\n${extraNotes}`].filter(Boolean).join('\n') ||
@@ -100,7 +115,7 @@ router.use(requireAdmin);
 
 router.post('/log-review', async (req, res) => {
   const reviewTypeRaw = req.body?.review_type || 'mixed';
-  const rt = ['honeypot', 'maze', 'access', 'ai_flag', 'alert', 'mixed'].includes(reviewTypeRaw)
+  const rt = ['honeypot', 'maze', 'access', 'ai_flag', 'alert', 'mixed', 'network'].includes(reviewTypeRaw)
     ? reviewTypeRaw
     : 'mixed';
 
@@ -197,6 +212,8 @@ router.post('/log-review', async (req, res) => {
     content: `# Review type\n${rt}\n\n# Log excerpts\n${blob || '(none)'}\n\n# Instructions from admin\n${userContext || '(none)'}`,
   });
 
+  const fullPrompt = JSON.stringify(msgs);
+
   let summaryMd = '';
   let suggestedText = '';
   let modelUsed = modelPrimary;
@@ -260,6 +277,7 @@ router.post('/log-review', async (req, res) => {
       `UPDATE ai_log_review_request_logs SET
            status='succeeded',
            model=?,
+           request_payload=?,
            response_payload=?,
            prompt_tokens=?,
            completion_tokens=?,
@@ -270,7 +288,8 @@ router.post('/log-review', async (req, res) => {
          WHERE request_id=?`,
       [
         modelUsed,
-        rawText.slice(0, 20_000),
+        fullPrompt,
+        JSON.stringify(completion),
         completion.usage?.prompt_tokens ?? null,
         completion.usage?.completion_tokens ?? null,
         completion.usage?.total_tokens ?? null,
@@ -324,6 +343,17 @@ router.get('/reviews', (_req, res) => {
        ORDER BY datetime(generated_at) DESC LIMIT 80`,
   );
   res.json({ reviews: rows });
+});
+
+router.get('/request-logs', (_req, res) => {
+  const rows = getAll(
+    `SELECT request_id, route, status, username, review_type, model,
+            prompt_tokens, completion_tokens, total_tokens, error_message,
+            created_at, finished_at, request_payload, response_payload
+       FROM ai_log_review_request_logs
+       ORDER BY datetime(created_at) DESC LIMIT 100`,
+  );
+  res.json({ logs: rows });
 });
 
 export default router;

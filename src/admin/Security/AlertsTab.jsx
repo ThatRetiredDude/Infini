@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from './shared.jsx';
+import { fetchWithCsrf } from '../../lib/api.js';
 
-const SOURCES = ['ai_flags', 'mi_access', 'honeypot', 'maze'];
+const SOURCES = ['ai_flags', 'mi_access', 'honeypot', 'maze', 'network_sensor'];
 const CHANNELS = ['email', 'discord', 'telegram', 'webhook'];
 
 function RuleForm({ initial, onSave, onCancel, saving }) {
@@ -16,6 +17,7 @@ function RuleForm({ initial, onSave, onCancel, saving }) {
   const isMi = form.source === 'mi_access';
   const isHp = form.source === 'honeypot';
   const isMz = form.source === 'maze';
+  const isNs = form.source === 'network_sensor';
 
   return (
     <div className="space-y-4 p-5 rounded-xl border border-zinc-700 bg-zinc-900/60">
@@ -90,6 +92,40 @@ function RuleForm({ initial, onSave, onCancel, saving }) {
             />
           </div>
         )}
+        {isNs && (
+          <>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Protocol (optional)</label>
+              <input
+                type="text"
+                value={form.predicate.protocol || ''}
+                onChange={(e) => setP('protocol', e.target.value.trim() || undefined)}
+                placeholder="ssh, telnet, ftp"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Event type contains (optional)</label>
+              <input
+                type="text"
+                value={form.predicate.event_type || ''}
+                onChange={(e) => setP('event_type', e.target.value.trim() || undefined)}
+                placeholder="e.g. cowrie.login.failed"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Peer IP (optional)</label>
+              <input
+                type="text"
+                value={form.predicate.ip || ''}
+                onChange={(e) => setP('ip', e.target.value.trim() || undefined)}
+                placeholder="Filter to one attacker IP"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+          </>
+        )}
         <div>
           <label className="block text-xs text-zinc-400 mb-1">Channel</label>
           <select value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))}
@@ -139,7 +175,7 @@ export default function AlertsTab({ toast }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/security/alerts`);
+      const res = await fetchWithCsrf(`${API_BASE}/admin/security/alerts`);
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || 'Failed');
       setRules(j.rules || []);
@@ -156,7 +192,7 @@ export default function AlertsTab({ toast }) {
   const create = async (form) => {
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/security/alerts`, {
+      const res = await fetchWithCsrf(`${API_BASE}/admin/security/alerts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -176,7 +212,7 @@ export default function AlertsTab({ toast }) {
   const update = async (id, form) => {
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/security/alerts/${id}`, {
+      const res = await fetchWithCsrf(`${API_BASE}/admin/security/alerts/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -196,7 +232,7 @@ export default function AlertsTab({ toast }) {
   const del = async (id, name) => {
     if (!confirm(`Delete alert rule "${name}"?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/security/alerts/${id}`, { method: 'DELETE' });
+      const res = await fetchWithCsrf(`${API_BASE}/admin/security/alerts/${id}`, { method: 'DELETE' });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || 'Failed');
       toast('success', 'Rule deleted');
@@ -209,7 +245,7 @@ export default function AlertsTab({ toast }) {
   const testSend = async (rule) => {
     setTestSending(rule.id);
     try {
-      const res = await fetch(`${API_BASE}/admin/security/share`, {
+      const res = await fetchWithCsrf(`${API_BASE}/admin/security/share`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

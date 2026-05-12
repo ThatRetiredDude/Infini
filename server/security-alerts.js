@@ -6,8 +6,7 @@
  * tick calls `runAlerts()` which:
  *   1. Reads enabled rules.
  *   2. For each rule whose cooldown has elapsed, evaluates the predicate
- *      against one of four sources (`ai_flags`, `access_log`, `honeypot`,
- *      `maze`).
+ *      against sources: `ai_flags`, `access_log`, `honeypot`, `maze`, `network_sensor`.
  *   3. If the predicate fires, dispatches via the rule's channel (email,
  *      discord, telegram, webhook) and records the delivery + audit row.
  *
@@ -73,6 +72,21 @@ function evaluatePredicate(source, predicate = {}) {
       params.push(predicate.ip);
     }
     sql = `SELECT COUNT(*) AS n FROM ai_honeypot_hits WHERE ${clauses.join(' AND ')}`;
+  } else if (source === 'network_sensor') {
+    const clauses = [`hit_at > ${cutoff}`];
+    if (predicate.event_type) {
+      clauses.push(`event_type LIKE ?`);
+      params.push(`%${String(predicate.event_type).slice(0, 200)}%`);
+    }
+    if (predicate.protocol) {
+      clauses.push(`protocol = ?`);
+      params.push(String(predicate.protocol).slice(0, 32));
+    }
+    if (predicate.ip) {
+      clauses.push(`peer_ip = ?`);
+      params.push(String(predicate.ip).slice(0, 128));
+    }
+    sql = `SELECT COUNT(*) AS n FROM network_sensor_events WHERE ${clauses.join(' AND ')}`;
   } else if (source === 'maze') {
     const clauses = [`last_seen > ${cutoff}`];
     if (predicate.ip) {
@@ -119,6 +133,23 @@ function buildExcerpt(source, predicate = {}) {
     }
     sql = `SELECT source, ip, ua, path, hit_at
            FROM ai_honeypot_hits WHERE ${clauses.join(' AND ')}
+           ORDER BY hit_at DESC LIMIT 5`;
+  } else if (source === 'network_sensor') {
+    const clauses = [`hit_at > ${cutoff}`];
+    if (predicate.event_type) {
+      clauses.push(`event_type LIKE ?`);
+      params.push(`%${String(predicate.event_type).slice(0, 200)}%`);
+    }
+    if (predicate.protocol) {
+      clauses.push(`protocol = ?`);
+      params.push(String(predicate.protocol).slice(0, 32));
+    }
+    if (predicate.ip) {
+      clauses.push(`peer_ip = ?`);
+      params.push(String(predicate.ip).slice(0, 128));
+    }
+    sql = `SELECT peer_ip, protocol, event_type, session_id, hit_at
+           FROM network_sensor_events WHERE ${clauses.join(' AND ')}
            ORDER BY hit_at DESC LIMIT 5`;
   } else if (source === 'maze') {
     const clauses = [`last_seen > ${cutoff}`];
