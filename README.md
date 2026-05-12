@@ -11,8 +11,7 @@ It ships as **one container** with **SQLite on disk** — no Postgres, no Redis,
 ## Features overview
 
 - **Security & monitoring** — Monitored endpoints, procedurally surfaced data-room activity under `/api/secrets/explore/*`, passive enrichment, Security Hub dashboards, configurable alerts, AI-assisted log review, and related admin tooling (see **Detailed overview** below for depth).
-- **Blog** — Optional and casual: Markdown/TipTap posts, drafts/published states, carousel — use it to read something light or pad the site with nonsense; it isn’t why this project exists.
-- **Public cover** — A donations-related page exists as part of the normal site shell (visibility-gated outbound links); it is **not** the primary purpose of Infini.
+- **Blog** — Optional and casual: Markdown/TipTap posts, drafts/published states, carousel — use it to share yout thoughts to the world or pad the site with nonsense to lure would-be attackers to your site. 
 
 **More to come** as development continues.
 
