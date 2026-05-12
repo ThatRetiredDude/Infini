@@ -6,6 +6,33 @@ Docker Compose loads `.env` automatically. [`docker-compose.yml`](../docker-comp
 
 Compose also sets **`DATABASE_FILE=/data/infini.sqlite`**, **`UPLOADS_DIR=/data/uploads`**, **`ACCESS_LOG_CSV_DIR=/data/logs`**, **`NODE_ENV=production`**, and **`PORT=3000`** inside the container—these override the same keys from `.env` where defined in `docker-compose.yml`.
 
+### Docker runtime secrets
+
+On container start, [`docker-entrypoint.sh`](../docker-entrypoint.sh) resolves **`JWT_SECRET`** and **`INTEGRATION_ENCRYPTION_KEY`** in this order for the container process (after optional DB reset flags may run):
+
+Persisted files live under **`/data/.secrets/`** on the Compose volume (`jwt_secret`, `integration_encryption_key`). — If the variable is **valid**, it is used as-is (Compose `env_file` / `.env` wins).
+   - `JWT_SECRET`: non-empty and at least **32** characters.
+   - `INTEGRATION_ENCRYPTION_KEY`: exactly **64 hexadecimal** characters (32 bytes), matching [`server/crypto.js`](../server/crypto.js).
+2. **Persisted file** on the volume: `/data/.secrets/jwt_secret` and `/data/.secrets/integration_encryption_key` (mode `600`; directory mode `700`).
+3. **Generate** with Node `crypto`, write the file, **`export`** for the process — one stderr notice per generated secret (values are never logged).
+
+Invalid-but-nonempty env values (wrong length or bad hex) are **ignored** with a stderr warning; the entrypoint falls through to the persisted file or a new generated secret.
+
+**Backups:** include the whole **`/data`** volume (SQLite, uploads, logs CSV mirror, and **`/data/.secrets`**). If you change `INTEGRATION_ENCRYPTION_KEY` without keeping the old key, existing encrypted integration rows cannot be decrypted.
+
+### Danger — optional SQLite reset (dev / lab only)
+
+**Never** enabled by secret rotation or auto-generation. To delete the main SQLite database file (and `-wal` / `-shm` siblings) **once** before `seed-admin` runs, set **both**:
+
+| Variable | Required value |
+| --- | --- |
+| `INFINI_RESET_DATABASE` | `1` |
+| `INFINI_CONFIRM_DATABASE_RESET` | `YES` (exact string; not `yes`) |
+
+The entrypoint logs a clear stderr line when files were removed. Remove both variables after the reset. Do **not** rely on this for production workflows; `/data/.secrets` is **not** deleted (avoids accidental mass lockout).
+
+**Manual checks:** Fresh Compose volume + minimal `.env` → container logs up to two auto-generation notices on first boot, login works, integrations UI can save credentials; second restart reuses `/data/.secrets` files without regenerating. Set valid secrets in `.env` → entrypoint prefers env over files. Dual reset flags → SQLite removed once only when both match exactly; secret auto-generation alone never deletes the DB.
+
 Below follows the sections in `.env.example`.
 
 ## Server
@@ -28,7 +55,7 @@ Below follows the sections in `.env.example`.
 
 | Variable | Notes |
 | --- | --- |
-| `JWT_SECRET` | **Required.** At least 32 characters (see generate hint in `.env.example`). |
+| `JWT_SECRET` | At least **32** characters for login/sessions. **Docker:** optional if omitted or invalid — generated and persisted under `/data/.secrets/jwt_secret` (see [Docker runtime secrets](#docker-runtime-secrets)). |
 | `JWT_EXPIRES_IN` | Session lifetime (e.g. `7d`). |
 | `COOKIE_NAME` | Default `mi_session`. |
 | `COOKIE_DOMAIN` | Usually empty; set if serving under a subdomain setup. |
@@ -49,7 +76,7 @@ Created only if no admin user exists yet. Same script runs locally and in [`dock
 
 | Variable | Notes |
 | --- | --- |
-| `INTEGRATION_ENCRYPTION_KEY` | **Required** for storing integration API keys in the DB. 64 hex chars (32 bytes). Generate: `openssl rand -hex 32`. |
+| `INTEGRATION_ENCRYPTION_KEY` | **64 hex chars** (32 bytes) for encrypting integration credentials in the DB. Generate: `openssl rand -hex 32`. **Docker:** optional if omitted or invalid — generated and persisted under `/data/.secrets/integration_encryption_key` (see [Docker runtime secrets](#docker-runtime-secrets)). |
 
 ## Data room (Turnstile)
 

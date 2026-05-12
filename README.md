@@ -26,7 +26,9 @@ cd Infini
 cp .env.example .env
 ```
 
-Edit `.env` — at minimum set **`JWT_SECRET`** and **`INTEGRATION_ENCRYPTION_KEY`** (see [docs/configuration.md](docs/configuration.md)).
+**Docker Compose:** If you omit **`JWT_SECRET`** or **`INTEGRATION_ENCRYPTION_KEY`**, or set invalid values (JWT shorter than 32 characters; integration key not 64 hex chars), the container [**entrypoint**](docker-entrypoint.sh) generates secrets on first boot and persists them under **`/data/.secrets/`** on the Compose volume (you will see one-line notices on stderr — secrets are never logged). Valid values in `.env` always win. Pin secrets in `.env` when you want portability or reproducible deploys.
+
+Optional **dev/lab only**: To wipe the SQLite file once before seed runs, set **both** `INFINI_RESET_DATABASE=1` and `INFINI_CONFIRM_DATABASE_RESET=YES`, then remove those flags after use. This does **not** run automatically when rotating secrets. Details: [docs/configuration.md](docs/configuration.md).
 
 ```bash
 docker compose up -d --build
