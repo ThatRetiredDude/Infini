@@ -110,7 +110,7 @@ export default function SecurityHub({ onNavigate, onToast, initialTab, readOnly 
         {activeTab === 'network'   && <NetworkSensorsTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'maze'      && <MazeTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'flagged'   && <FlaggedIpsTab toast={toast} readOnly={readOnly} />}
-        {activeTab === 'alerts'    && <AlertsTab toast={toast} />}
+        {activeTab === 'alerts'    && <AlertsTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'mfa'       && <MfaAdminTab toast={toast} />}
       </div>
     </div>

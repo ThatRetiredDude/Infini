@@ -163,7 +163,7 @@ function RuleForm({ initial, onSave, onCancel, saving }) {
   );
 }
 
-export default function AlertsTab({ toast }) {
+export default function AlertsTab({ toast, readOnly = false }) {
   const [rules, setRules] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -275,13 +275,31 @@ export default function AlertsTab({ toast }) {
           <h2 className="text-xl font-semibold text-zinc-100">Alert Rules</h2>
           <p className="text-zinc-400 text-sm mt-0.5">Evaluated every minute. Dispatches via configured integration channels.</p>
         </div>
-        <button onClick={() => { setShowNew(true); setEditId(null); }}
-          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
-          + New Rule
+        <button
+          onClick={() => {
+            if (readOnly) return;
+            setShowNew(true);
+            setEditId(null);
+          }}
+          disabled={readOnly}
+          title={readOnly ? 'Creating rules is disabled in demo mode' : undefined}
+          className={
+            readOnly
+              ? 'px-4 py-2 rounded-lg border border-zinc-700 text-zinc-500 text-sm font-medium cursor-not-allowed'
+              : 'px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors'
+          }
+        >
+          {readOnly ? 'New Rule disabled in demo' : '+ New Rule'}
         </button>
       </div>
 
-      {showNew && <RuleForm onSave={create} onCancel={() => setShowNew(false)} saving={saving} />}
+      {readOnly && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4 text-xs text-zinc-500">
+          Alert rules are visible in demo mode, but creating, editing, deleting, and test sends are disabled.
+        </div>
+      )}
+
+      {showNew && !readOnly && <RuleForm onSave={create} onCancel={() => setShowNew(false)} saving={saving} />}
 
       {loading && <div className="text-zinc-500 italic text-sm py-4">Loading…</div>}
 
@@ -295,7 +313,7 @@ export default function AlertsTab({ toast }) {
         const ruleDels = deliveriesForRule(rule.id);
         return (
           <div key={rule.id} className={`rounded-xl border p-5 space-y-3 ${rule.enabled ? 'border-zinc-700 bg-zinc-900/50' : 'border-zinc-800 bg-zinc-900/20 opacity-60'}`}>
-            {editId === rule.id ? (
+            {editId === rule.id && !readOnly ? (
               <RuleForm initial={rule} onSave={(f) => update(rule.id, f)} onCancel={() => setEditId(null)} saving={saving} />
             ) : (
               <>
@@ -316,20 +334,22 @@ export default function AlertsTab({ toast }) {
                       Predicate: {JSON.stringify(rule.predicate)}
                     </div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => testSend(rule)} disabled={testSending === rule.id}
-                      className="px-3 py-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-medium disabled:opacity-50">
-                      {testSending === rule.id ? 'Sending…' : 'Test Send'}
-                    </button>
-                    <button onClick={() => { setEditId(rule.id); setShowNew(false); }}
-                      className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-xs">
-                      Edit
-                    </button>
-                    <button onClick={() => del(rule.id, rule.name)}
-                      className="px-3 py-1.5 rounded-lg border border-rose-600/30 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 text-xs">
-                      Delete
-                    </button>
-                  </div>
+                  {!readOnly && (
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => testSend(rule)} disabled={testSending === rule.id}
+                        className="px-3 py-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-medium disabled:opacity-50">
+                        {testSending === rule.id ? 'Sending…' : 'Test Send'}
+                      </button>
+                      <button onClick={() => { setEditId(rule.id); setShowNew(false); }}
+                        className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-xs">
+                        Edit
+                      </button>
+                      <button onClick={() => del(rule.id, rule.name)}
+                        className="px-3 py-1.5 rounded-lg border border-rose-600/30 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 text-xs">
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {ruleDels.length > 0 && (

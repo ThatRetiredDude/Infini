@@ -149,9 +149,27 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
         </div>
       )}
       {section === '' && isGuest && (
-        <div>
+        <div className="grid gap-4 md:grid-cols-2">
           <AdminCard title="Security Hub" onClick={() => navigate('/admin/security')}>
             Explore the full monitoring suite: endpoints, data-room activity, alerts, flagged IPs, and AI flags.
+          </AdminCard>
+          <AdminCard title="Carousel" disabled>
+            Homepage featured tiles surfaced on the landing page grid.
+          </AdminCard>
+          <AdminCard title="Page visibility" disabled>
+            Who can reach home, blog, and donations publicly — plus gated APIs.
+          </AdminCard>
+          <AdminCard title="Branding" disabled>
+            Public header name, footer text, and site-wide accent color for the blog and landing pages.
+          </AdminCard>
+          <AdminCard title="Blog" disabled>
+            Create and publish posts with the TipTap rich editor.
+          </AdminCard>
+          <AdminCard title="Integrations" disabled>
+            xAI, SMTP, enrichment APIs, Discord, Telegram, and webhooks.
+          </AdminCard>
+          <AdminCard title="AI Log Review" disabled>
+            Send curated log excerpts to Grok for analysis and suggested responses.
           </AdminCard>
         </div>
       )}
@@ -192,14 +210,27 @@ function NavBtn({ active, onClick, children }) {
   );
 }
 
-function AdminCard({ title, children, onClick }) {
+function AdminCard({ title, children, onClick, disabled = false }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
-      className="card p-5 text-left hover:border-accent/40 transition-colors"
+      title={disabled ? 'Locked in demo mode' : undefined}
+      className={
+        disabled
+          ? 'card p-5 text-left opacity-55 cursor-not-allowed border-ink-800'
+          : 'card p-5 text-left hover:border-accent/40 transition-colors'
+      }
     >
-      <h2 className="text-lg text-ink-100 font-semibold mb-2">{title}</h2>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <h2 className="text-lg text-ink-100 font-semibold">{title}</h2>
+        {disabled && (
+          <span className="text-[10px] uppercase tracking-wide text-ink-500 border border-ink-700 rounded px-2 py-0.5">
+            Demo locked
+          </span>
+        )}
+      </div>
       <p className="text-sm text-ink-400">{children}</p>
     </button>
   );
