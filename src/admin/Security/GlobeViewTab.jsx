@@ -14,6 +14,11 @@ const HOUR_PRESETS = [
   { h: 720, label: '30d' },
 ];
 
+const EARTH_IMAGE_URL = 'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-dark.jpg';
+const EARTH_BUMP_URL = 'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png';
+const COUNTRIES_GEOJSON_URL =
+  'https://cdn.jsdelivr.net/npm/globe.gl/example/datasets/ne_110m_admin_0_countries.geojson';
+
 function pointColor(d) {
   if (d.geo_status === 'unknown') return '#94a3b8';
   if (d.geo_status === 'estimated_country') return '#facc15';
@@ -151,25 +156,24 @@ export default function GlobeViewTab({ toast }) {
     if (!rootEl) return undefined;
     setGlobeError(null);
 
-    Promise.all([import('globe.gl'), import('three')])
-      .then(([{ default: Globe }, THREE]) => {
+    import('globe.gl')
+      .then(({ default: Globe }) => {
         if (cancelled || !mountRef.current) return;
-        const { MeshBasicMaterial, Color } = THREE;
         const h = () => Math.max(380, Math.min(560, window.innerHeight * 0.45));
         const globe = new Globe(mountRef.current)
           .backgroundColor('#020617')
-          .globeMaterial(
-            new MeshBasicMaterial({
-              wireframe: true,
-              color: new Color(0x6366f1),
-              transparent: true,
-              opacity: 0.2,
-            }),
-          )
+          .globeImageUrl(EARTH_IMAGE_URL)
+          .bumpImageUrl(EARTH_BUMP_URL)
           .showGraticules(true)
           .showAtmosphere(true)
           .atmosphereColor('#312e81')
           .atmosphereAltitude(0.15)
+          .polygonsData([])
+          .polygonAltitude(0.004)
+          .polygonCapColor(() => 'rgba(15, 23, 42, 0.04)')
+          .polygonSideColor(() => 'rgba(15, 23, 42, 0)')
+          .polygonStrokeColor(() => 'rgba(148, 163, 184, 0.48)')
+          .polygonLabel((d) => d.properties?.ADMIN || d.properties?.NAME || '')
           .pointsData([])
           .pointLat('lat')
           .pointLng('lng')
@@ -216,6 +220,20 @@ export default function GlobeViewTab({ toast }) {
         offResize = () => window.removeEventListener('resize', resize);
         globeRef.current = globe;
         setGlobeReady(true);
+
+        fetch(COUNTRIES_GEOJSON_URL)
+          .then((res) => {
+            if (!res.ok) throw new Error(`countries_${res.status}`);
+            return res.json();
+          })
+          .then((countries) => {
+            if (cancelled || !globeRef.current) return;
+            const features = Array.isArray(countries.features) ? countries.features : [];
+            globeRef.current.polygonsData(features.filter((d) => d.properties?.ISO_A2 !== 'AQ'));
+          })
+          .catch((e) => {
+            if (toast) toast('error', `Globe outlines: ${e.message || e}`);
+          });
       })
       .catch((e) => {
         const message = e.message || String(e);

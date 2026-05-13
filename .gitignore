@@ -43,6 +43,9 @@ pnpm-debug.log*
 # Misc
 _legacy/
 
+# Local tooling
+server/scripts/simulate-traffic.mjs
+
 coverage/
 .cache/
 .tmp/
