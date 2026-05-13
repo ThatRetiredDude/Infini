@@ -1,5 +1,7 @@
 # Infini
 
+[LIVE DEMO AT INFINI.WIN](https://infini.win)
+
 **Self-hosted honeypot and security monitoring made simple.** One Docker container. No complex setup.
 
 ## What is Infini?
