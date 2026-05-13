@@ -47,7 +47,16 @@ function downloadJson(rows, filename) {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-export default function ExportShareBar({ rows = [], filename = 'export', source, filters = {}, toast, readOnly = false }) {
+export default function ExportShareBar({
+  rows = [],
+  filename = 'export',
+  source,
+  filters = {},
+  toast,
+  readOnly = false,
+  onExportCsv,
+  onExportJson,
+}) {
   const [showSend, setShowSend] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendForm, setSendForm] = useState({ channel: 'email', recipient: '', format: 'summary' });
@@ -86,14 +95,14 @@ export default function ExportShareBar({ rows = [], filename = 'export', source,
       {!readOnly && (
         <>
           <button
-            onClick={() => downloadCsv(rows, filename)}
+            onClick={() => (onExportCsv ? onExportCsv() : downloadCsv(rows, filename))}
             disabled={!rows.length}
             className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 text-xs font-medium transition-colors disabled:opacity-40"
           >
             Export CSV ({rows.length})
           </button>
           <button
-            onClick={() => downloadJson(rows, filename)}
+            onClick={() => (onExportJson ? onExportJson() : downloadJson(rows, filename))}
             disabled={!rows.length}
             className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 text-xs font-medium transition-colors disabled:opacity-40"
           >

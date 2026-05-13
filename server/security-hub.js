@@ -162,6 +162,96 @@ function rowsToCsv(rows) {
   return lines.join('\r\n');
 }
 
+function cowrieEventAction(eventType) {
+  const t = String(eventType || '').toLowerCase();
+  if (t.includes('login.success')) return 'login_success';
+  if (t.includes('login.failed')) return 'login_failed';
+  if (t.includes('command.input')) return 'command';
+  if (t.includes('command.failed')) return 'command_failed';
+  if (t.includes('file_download')) return 'download';
+  if (t.includes('file_upload')) return 'upload';
+  if (t.includes('log.closed')) return 'ttylog_closed';
+  if (t.includes('connect')) return 'connect';
+  if (t.includes('closed')) return 'closed';
+  return 'event';
+}
+
+function normalizeCowrieRow(r) {
+  const payload = jsonParseSafe(r.payload_json, null);
+  return {
+    ...r,
+    enrichment: jsonParseSafe(r.enrichment, null),
+    payload_json: payload,
+    action: cowrieEventAction(r.event_type),
+    message: payload?.message || null,
+    username: payload?.username || null,
+    password: payload?.password || null,
+    input: payload?.input || null,
+    filename: payload?.filename || null,
+    outfile: payload?.outfile || null,
+    url: payload?.url || null,
+    shasum: payload?.shasum || null,
+    ttylog: payload?.ttylog || null,
+    duration: payload?.duration ?? null,
+  };
+}
+
+function cowrieWhere(req, { defaultHours = null } = {}) {
+  const where = [];
+  const params = [];
+  const range = String(req.query.range || '').toLowerCase();
+  if (req.query.since || req.query.until) {
+    if (req.query.since) {
+      where.push(`hit_at >= ?`);
+      params.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+    }
+    if (req.query.until) {
+      where.push(`hit_at <= ?`);
+      params.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+    }
+  } else if (range !== 'all' && defaultHours) {
+    const rangeHours = range === '7d' ? 24 * 7 : range === '24h' ? 24 : Number(req.query.hours) || defaultHours;
+    where.push(`hit_at > ${sqlHoursAgo(rangeHours)}`);
+  }
+  if (req.query.protocol) {
+    where.push(`protocol = ?`);
+    params.push(String(req.query.protocol).slice(0, 32));
+  }
+  if (req.query.event_type) {
+    where.push(`event_type LIKE ?`);
+    params.push(`%${String(req.query.event_type).slice(0, 200)}%`);
+  }
+  if (req.query.ip) {
+    where.push(`peer_ip = ?`);
+    params.push(String(req.query.ip).slice(0, 128));
+  }
+  if (req.query.session_id) {
+    where.push(`session_id = ?`);
+    params.push(String(req.query.session_id).slice(0, 128));
+  }
+  if (req.query.sensor) {
+    where.push(`sensor_name = ?`);
+    params.push(String(req.query.sensor).slice(0, 128));
+  }
+  for (const key of ['username', 'input', 'filename', 'url', 'shasum']) {
+    if (req.query[key]) {
+      where.push(`LOWER(IFNULL(payload_json,'')) LIKE ?`);
+      params.push(`%"${key}":%${String(req.query[key]).slice(0, 200).toLowerCase()}%`);
+    }
+  }
+  if (req.query.q) {
+    const q = `%${String(req.query.q).slice(0, 200).toLowerCase()}%`;
+    where.push(`(
+      LOWER(IFNULL(event_type,'')) LIKE ?
+      OR LOWER(IFNULL(session_id,'')) LIKE ?
+      OR LOWER(IFNULL(peer_ip,'')) LIKE ?
+      OR LOWER(IFNULL(payload_json,'')) LIKE ?
+    )`);
+    params.push(q, q, q, q);
+  }
+  return { where: where.length ? where.join(' AND ') : '1=1', params };
+}
+
 // ─── Overview (legacy-compatible shape + extra counts for Infini) ─────────
 router.get('/overview', (req, res) => {
   const since24 = sqlHoursAgo(24);
@@ -1002,55 +1092,21 @@ router.get('/network-sensor/stats', (_req, res) => {
 
 router.get('/network-sensor', (req, res) => {
   const format = String(req.query.format || '');
-  if (req.query.since || req.query.until) {
-    const clauses = [];
-    const sp = [];
-    if (req.query.since) {
-      clauses.push(`hit_at >= ?`);
-      sp.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
-    }
-    if (req.query.until) {
-      clauses.push(`hit_at <= ?`);
-      sp.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
-    }
-    return finishNetworkSensor(req, res, clauses.join(' AND '), sp, format);
-  }
-  return finishNetworkSensor(req, res, `hit_at > ${rangeCutoff(req, 24)}`, [], format);
+  return finishNetworkSensor(req, res, format);
 });
 
-function finishNetworkSensor(req, res, hitClause, baseParams = [], format = '') {
+function finishNetworkSensor(req, res, format = '') {
   const { limit, offset } = parsePage(req);
-  const where = [hitClause];
-  const params = [...baseParams];
-  if (req.query.protocol) {
-    where.push(`protocol = ?`);
-    params.push(String(req.query.protocol).slice(0, 32));
-  }
-  if (req.query.event_type) {
-    where.push(`event_type LIKE ?`);
-    params.push(`%${String(req.query.event_type).slice(0, 200)}%`);
-  }
-  if (req.query.ip) {
-    where.push(`peer_ip = ?`);
-    params.push(String(req.query.ip).slice(0, 128));
-  }
-  if (req.query.session_id) {
-    where.push(`session_id = ?`);
-    params.push(String(req.query.session_id).slice(0, 128));
-  }
-  const wc = where.join(' AND ');
+  const { where: wc, params } = cowrieWhere(req, { defaultHours: 24 });
+  const exportLimit = Math.max(1, Math.min(50_000, parseInt(req.query.export_limit, 10) || 50_000));
   const rows = getAll(
     `SELECT id, hit_at, peer_ip, session_id, sensor_name, protocol, event_type,
             cowrie_eventid, payload_json, enrichment
      FROM network_sensor_events
      WHERE ${wc}
      ORDER BY hit_at DESC LIMIT ? OFFSET ?`,
-    [...params, limit, offset],
-  ).map((r) => ({
-    ...r,
-    enrichment: jsonParseSafe(r.enrichment, null),
-    payload_json: jsonParseSafe(r.payload_json, null),
-  }));
+    [...params, format ? exportLimit : limit, format ? 0 : offset],
+  ).map(normalizeCowrieRow);
   const total = Number(getOne(`SELECT COUNT(*) AS n FROM network_sensor_events WHERE ${wc}`, params)?.n || 0);
   if (format === 'csv') {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -1064,6 +1120,50 @@ function finishNetworkSensor(req, res, hitClause, baseParams = [], format = '') 
   res.json({ rows, total, totalCount: total, limit, offset });
 }
 
+router.get('/network-sensor/sessions', (req, res) => {
+  const { limit, offset } = parsePage(req);
+  const { where: wc, params } = cowrieWhere(req, { defaultHours: 24 * 7 });
+  const rows = getAll(
+    `SELECT
+       session_id,
+       MIN(hit_at) AS first_seen,
+       MAX(hit_at) AS last_seen,
+       peer_ip,
+       protocol,
+       sensor_name,
+       COUNT(*) AS event_count,
+       SUM(CASE WHEN event_type = 'cowrie.login.failed' THEN 1 ELSE 0 END) AS login_failed,
+       SUM(CASE WHEN event_type = 'cowrie.login.success' THEN 1 ELSE 0 END) AS login_success,
+       SUM(CASE WHEN event_type = 'cowrie.command.input' THEN 1 ELSE 0 END) AS commands,
+       SUM(CASE WHEN event_type LIKE '%file_download%' THEN 1 ELSE 0 END) AS downloads,
+       SUM(CASE WHEN event_type LIKE '%file_upload%' THEN 1 ELSE 0 END) AS uploads
+     FROM network_sensor_events
+     WHERE ${wc} AND session_id IS NOT NULL AND session_id <> ''
+     GROUP BY session_id
+     ORDER BY last_seen DESC LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  ).map((r) => ({
+    ...r,
+    event_count: Number(r.event_count || 0),
+    login_failed: Number(r.login_failed || 0),
+    login_success: Number(r.login_success || 0),
+    commands: Number(r.commands || 0),
+    downloads: Number(r.downloads || 0),
+    uploads: Number(r.uploads || 0),
+  }));
+  const total = Number(
+    getOne(
+      `SELECT COUNT(*) AS n FROM (
+         SELECT session_id FROM network_sensor_events
+         WHERE ${wc} AND session_id IS NOT NULL AND session_id <> ''
+         GROUP BY session_id
+       )`,
+      params,
+    )?.n || 0,
+  );
+  res.json({ rows, total, totalCount: total, limit, offset });
+});
+
 router.get('/network-sensor/session/:sessionId', (req, res) => {
   const sid = String(req.params.sessionId || '').slice(0, 128);
   if (!sid) return res.status(400).json({ error: 'session_id required' });
@@ -1073,12 +1173,46 @@ router.get('/network-sensor/session/:sessionId', (req, res) => {
      FROM network_sensor_events WHERE session_id = ?
      ORDER BY hit_at ASC LIMIT 500`,
     [sid],
-  ).map((r) => ({
-    ...r,
-    enrichment: jsonParseSafe(r.enrichment, null),
-    payload_json: jsonParseSafe(r.payload_json, null),
-  }));
-  res.json({ session_id: sid, rows, count: rows.length });
+  ).map(normalizeCowrieRow);
+  const summary = {
+    session_id: sid,
+    first_seen: rows[0]?.hit_at || null,
+    last_seen: rows.at(-1)?.hit_at || null,
+    peer_ip: rows.find((r) => r.peer_ip)?.peer_ip || null,
+    protocol: rows.find((r) => r.protocol)?.protocol || null,
+    sensor_name: rows.find((r) => r.sensor_name)?.sensor_name || null,
+    event_count: rows.length,
+    login_attempts: rows
+      .filter((r) => String(r.event_type).startsWith('cowrie.login.'))
+      .map((r) => ({
+        hit_at: r.hit_at,
+        success: r.event_type === 'cowrie.login.success',
+        username: r.username,
+        password: r.password,
+      })),
+    commands: rows
+      .filter((r) => r.input)
+      .map((r) => ({ hit_at: r.hit_at, input: r.input, event_type: r.event_type })),
+    transfers: rows
+      .filter((r) => r.filename || r.outfile || r.url || r.shasum)
+      .map((r) => ({
+        hit_at: r.hit_at,
+        event_type: r.event_type,
+        filename: r.filename,
+        outfile: r.outfile,
+        url: r.url,
+        shasum: r.shasum,
+      })),
+    ttylogs: rows
+      .filter((r) => r.ttylog)
+      .map((r) => ({
+        hit_at: r.hit_at,
+        ttylog: r.ttylog,
+        duration: r.duration,
+        shasum: r.shasum,
+      })),
+  };
+  res.json({ session_id: sid, summary, rows, count: rows.length });
 });
 
 // ─── Data room activity ────────────────────────────────────────────────────
@@ -1785,11 +1919,14 @@ router.post('/share', async (req, res) => {
          ORDER BY created_at DESC LIMIT 500`,
       );
     } else if (source === 'network_sensor') {
+      const fakeReq = { query: req.body.filters || {} };
+      const { where: wc, params } = cowrieWhere(fakeReq, { defaultHours: hours });
       rows = getAll(
-        `SELECT hit_at, peer_ip, protocol, event_type, session_id, cowrie_eventid
+        `SELECT hit_at, peer_ip, protocol, event_type, session_id, sensor_name, cowrie_eventid, payload_json
          FROM network_sensor_events
-         WHERE hit_at > strftime('%Y-%m-%dT%H:%M:%fZ','now','-${hours} hours')
+         WHERE ${wc}
          ORDER BY hit_at DESC LIMIT 500`,
+        params,
       );
     } else {
       return res.status(400).json({ error: 'invalid_source' });

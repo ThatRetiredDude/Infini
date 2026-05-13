@@ -79,12 +79,21 @@ function inferProtocol(obj) {
   return 'ssh';
 }
 
-function stableEventId(obj, rawLine) {
-  if (obj.eventid && String(obj.eventid).length > 0) {
-    return String(obj.eventid).slice(0, 256);
-  }
-  const h = createHash('sha256').update(rawLine).digest('hex').slice(0, 40);
-  return `synth_${h}`;
+function stableEventId(obj, rawLine, logPath, lineOffset) {
+  const h = createHash('sha256')
+    .update(
+      JSON.stringify({
+        logPath,
+        offset: lineOffset,
+        ts: obj.timestamp || obj.time || obj.date || null,
+        session: obj.session || null,
+        eventid: obj.eventid || null,
+        raw: rawLine,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 40);
+  return `cowrie_${h}`;
 }
 
 function parseHitTime(obj) {
@@ -131,18 +140,32 @@ export function pollCowrieLogOnce() {
     const buf = Buffer.alloc(toRead);
     fs.readSync(fd, buf, 0, toRead, offset);
     const chunk = buf.toString('utf8');
-    writeCursor(logPath, st.size);
-    const lines = chunk.split(/\r?\n/).filter((l) => l.trim());
+    const newlineMatches = [...chunk.matchAll(/\r?\n/g)];
+    const lastNewline = newlineMatches.at(-1);
+    if (!lastNewline) return 0;
+
+    const completeEnd = lastNewline.index + lastNewline[0].length;
+    const completeChunk = chunk.slice(0, completeEnd);
 
     let inserted = 0;
-    for (const line of lines) {
+    let processedBytes = 0;
+    const lineRe = /([^\r\n]*)(\r?\n)/g;
+    for (const match of completeChunk.matchAll(lineRe)) {
+      const line = match[1];
+      const lineOffset = offset + processedBytes;
+      processedBytes += Buffer.byteLength(match[0], 'utf8');
+      if (!line.trim()) {
+        writeCursor(logPath, offset + processedBytes);
+        continue;
+      }
       let obj;
       try {
         obj = JSON.parse(line);
       } catch {
+        writeCursor(logPath, offset + processedBytes);
         continue;
       }
-      const cowrie_eventid = stableEventId(obj, line);
+      const cowrie_eventid = stableEventId(obj, line, logPath, lineOffset);
       const eventType = String(obj.eventid || 'unknown').slice(0, 256);
       const peerIp = peerIpFrom(obj);
       const sessionId = obj.session != null ? String(obj.session).slice(0, 128) : null;
@@ -170,48 +193,51 @@ export function pollCowrieLogOnce() {
         );
       } catch (e) {
         console.warn('[cowrie-ingest] insert failed:', e?.message || e);
-        continue;
+        break;
       }
 
-      if (!result.changes) continue;
-      inserted += 1;
-      _lastPollMs = Date.now();
+      writeCursor(logPath, offset + processedBytes);
 
-      const rowId = Number(result.lastInsertRowid);
-      appendCsvLine({
-        hit_at: hitAt,
-        peer_ip: peerIp,
-        session_id: sessionId,
-        protocol,
-        event_type: eventType,
-        cowrie_eventid,
-        payload_json: payloadJson,
-      });
-      recordProtocolDecoyEvent({
-        hit_at: hitAt,
-        peer_ip: peerIp,
-        session_id: sessionId,
-        sensor_name: sensorName,
-        protocol,
-        event_type: eventType,
-        cowrie_eventid,
-        payload_json: payloadJson,
-      });
+      if (result.changes) {
+        inserted += 1;
+        _lastPollMs = Date.now();
 
-      if (peerIp && peerIp !== 'unknown') {
-        enrichIp(peerIp)
-          .then((info) => {
-            if (!info) return;
-            try {
-              run(`UPDATE network_sensor_events SET enrichment = ? WHERE id = ?`, [
-                JSON.stringify(info),
-                rowId,
-              ]);
-            } catch {
-              /* ignore */
-            }
-          })
-          .catch(() => {});
+        const rowId = Number(result.lastInsertRowid);
+        appendCsvLine({
+          hit_at: hitAt,
+          peer_ip: peerIp,
+          session_id: sessionId,
+          protocol,
+          event_type: eventType,
+          cowrie_eventid,
+          payload_json: payloadJson,
+        });
+        recordProtocolDecoyEvent({
+          hit_at: hitAt,
+          peer_ip: peerIp,
+          session_id: sessionId,
+          sensor_name: sensorName,
+          protocol,
+          event_type: eventType,
+          cowrie_eventid,
+          payload_json: payloadJson,
+        });
+
+        if (peerIp && peerIp !== 'unknown') {
+          enrichIp(peerIp)
+            .then((info) => {
+              if (!info) return;
+              try {
+                run(`UPDATE network_sensor_events SET enrichment = ? WHERE id = ?`, [
+                  JSON.stringify(info),
+                  rowId,
+                ]);
+              } catch {
+                /* ignore */
+              }
+            })
+            .catch(() => {});
+        }
       }
     }
     return inserted;
@@ -282,6 +308,13 @@ export function getCowrieIngestHealth() {
     last_poll_ms_ago: _lastPollMs ? (Date.now() - _lastPollMs) / 1000 : null,
   };
 }
+
+export const __test__ = {
+  stableEventId,
+  inferProtocol,
+  parseHitTime,
+  peerIpFrom,
+};
 
 /**
  * Start interval polling. Idempotent.

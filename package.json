@@ -13,6 +13,7 @@
     "db:init": "node server/scripts/db-init.js",
     "db:seed-admin": "node server/scripts/seed-admin.js",
     "lint": "eslint . --ext .js,.jsx",
+    "test:cowrie-ingest": "node server/scripts/test-cowrie-ingest.mjs",
     "format": "prettier --write .",
     "smoke": "node server/scripts/smoke-check.mjs"
   },
