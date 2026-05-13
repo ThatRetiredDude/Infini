@@ -17,6 +17,7 @@ import { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { run, getOne } from './db.js';
 import { enrichIp } from './ip-enrichment.js';
+import { recordDecoyRequest } from './decoy-events.js';
 
 // ─── Hit recorder ────────────────────────────────────────────────────────────
 const SAFE_HEADERS = [
@@ -123,6 +124,15 @@ export function recordHit(req, source) {
       .catch(() => {});
   }
 
+  recordDecoyRequest(req, {
+    source: 'honeypot',
+    decoy_id: source,
+    decoy_type: source.includes('login') || source.includes('admin') ? 'login' : 'api',
+    action: method === 'POST' ? 'submit' : 'view',
+    severity: method === 'POST' || bodyExcerpt ? 'medium' : 'low',
+    reasons: ['http_decoy_hit', source],
+  });
+
   return hitId;
 }
 
@@ -134,6 +144,17 @@ const SLOW_MIN = 350;
 const SLOW_RANGE = 400;
 function slowDelay(req, res, next) {
   setTimeout(next, SLOW_MIN + Math.random() * SLOW_RANGE);
+}
+
+function recordFakeDataAction(req, decoyId, action = 'download_attempt') {
+  return recordDecoyRequest(req, {
+    source: 'fake_data',
+    decoy_id: decoyId,
+    decoy_type: 'file',
+    action,
+    severity: 'high',
+    reasons: ['fake_data_access', action, decoyId],
+  });
 }
 
 const BAIT_SYSTEM_PROMPT = {
@@ -226,6 +247,28 @@ const BAIT_BACKUP_INDEX = {
   ],
   _note: 'download requires ?token=<signed_download_token>',
 };
+
+const FAKE_PHARMA_TRIALS_CSV = [
+  'trial_id,compound,phase,site,cohort,adverse_event_count,status',
+  'APC-PH-1042,redacted GLP-1 analog,II,Basel,obesity-12w,0,locked',
+  'APC-PH-1188,redacted kinase inhibitor,I,Singapore,oncology-dose-escalation,2,restricted',
+  'APC-PH-1207,redacted antiviral,III,Boston,respiratory-24w,1,restricted',
+].join('\n');
+
+const FAKE_PASSWORD_DUMP = [
+  'username,password_hash,last_rotated,source',
+  'arivera,$argon2id$v=19$m=65536,t=3,p=4$[REDACTED],2026-04-02,vpn',
+  'mellis,$argon2id$v=19$m=65536,t=3,p=4$[REDACTED],2026-04-14,intranet',
+  'svc-reconcile,$argon2id$v=19$m=65536,t=3,p=4$[REDACTED],2026-03-28,finance-batch',
+].join('\n');
+
+const FAKE_DATABASE_EXPORT = [
+  '-- Arden Point Capital research export',
+  '-- generated_at=2026-05-01T03:14:22Z',
+  'CREATE TABLE investor_contacts (id INTEGER PRIMARY KEY, name TEXT, email TEXT, tier TEXT);',
+  "INSERT INTO investor_contacts VALUES (1, 'REDACTED', 'redacted@example.invalid', 'strategic');",
+  "INSERT INTO investor_contacts VALUES (2, 'REDACTED', 'redacted@example.invalid', 'restricted');",
+].join('\n');
 
 // ─── Easy HTTP lures (Jenkins, GitLab, Grafana, Actuator, OWA, Solr, AWS, ECP) ──
 // Each provides realistic interactive feedback: login forms accept POST and reply
@@ -572,6 +615,33 @@ router.get('/system-prompt', slowDelay, (req, res) => {
 router.get('/internal/dossier-dump', slowDelay, (req, res) => {
   recordHit(req, 'dossier_dump_probe');
   res.status(200).json(BAIT_DUMP);
+});
+
+router.get(['/fake-data/pharma-trials.csv', '/downloads/pharma-trials.csv'], slowDelay, (req, res) => {
+  recordFakeDataAction(req, 'pharma_trials_export');
+  res
+    .status(200)
+    .type('text/csv')
+    .set('Content-Disposition', 'attachment; filename="pharma-trials-redacted.csv"')
+    .send(`${FAKE_PHARMA_TRIALS_CSV}\n`);
+});
+
+router.get(['/fake-data/passwords.csv', '/downloads/passwords.csv'], slowDelay, (req, res) => {
+  recordFakeDataAction(req, 'password_dump');
+  res
+    .status(200)
+    .type('text/csv')
+    .set('Content-Disposition', 'attachment; filename="password-export-redacted.csv"')
+    .send(`${FAKE_PASSWORD_DUMP}\n`);
+});
+
+router.get(['/fake-data/database-export.sql', '/downloads/database-export.sql'], slowDelay, (req, res) => {
+  recordFakeDataAction(req, 'database_backup');
+  res
+    .status(200)
+    .type('application/sql')
+    .set('Content-Disposition', 'attachment; filename="research-database-redacted.sql"')
+    .send(`${FAKE_DATABASE_EXPORT}\n`);
 });
 
 router.post('/eval', slowDelay, (req, res) => {

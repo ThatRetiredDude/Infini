@@ -42,6 +42,7 @@ import { createHash } from 'node:crypto';
 import { getOne, prepare } from './db.js';
 import { enrichIp } from './ip-enrichment.js';
 import { getServiceCredentials } from './integrations.js';
+import { recordDecoyRequest } from './decoy-events.js';
 
 const SELF_ID_PREFIX = 'APC-ACCESS-ID:';
 const BYPASS_COOKIE = 'apc_data_room_ok';
@@ -166,6 +167,16 @@ export function recordMazeHit(req, depth, pathId) {
       })
       .catch(() => {});
   }
+
+  recordDecoyRequest(req, {
+    source: 'fake_data',
+    decoy_id: 'data_maze',
+    decoy_type: 'maze',
+    action: pathStr === 'identify' ? 'identify_self' : Number(depth) > 3 ? 'deep_traverse' : 'view',
+    severity: pathStr === 'identify' ? 'high' : Number(depth) > 3 ? 'medium' : 'low',
+    reasons: ['fake_data_access', pathStr === 'identify' ? 'self_identification' : `depth_${Number(depth) || 0}`],
+    session_key: `${ip}:${date}`,
+  });
 }
 
 // ─── Delay tuning ────────────────────────────────────────────────────────────

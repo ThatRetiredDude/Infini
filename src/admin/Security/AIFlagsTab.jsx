@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE, SeverityBadge, ActionBadge, ReasonChips, DisabledUsersPanel } from './shared.jsx';
 import ExportShareBar from './ExportShareBar.jsx';
+import EventLogTable from './EventLogTable.jsx';
 import { fetchWithCsrf } from '../../lib/api.js';
 
 export default function AIFlagsTab({ toast, readOnly = false }) {
@@ -34,7 +35,7 @@ export default function AIFlagsTab({ toast, readOnly = false }) {
       setTotalCount(data.totalCount || 0);
       setTotalPages(Math.max(1, Math.ceil((data.totalCount || 0) / limit)));
     } catch (e) {
-      toast('error', 'Failed to load AI flags: ' + e.message);
+      toast('error', 'Failed to load legacy submitted-input flags: ' + e.message);
     } finally {
       setLoading(false);
     }
@@ -70,9 +71,9 @@ export default function AIFlagsTab({ toast, readOnly = false }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-100">AI Safety Flags</h2>
+          <h2 className="text-xl font-semibold text-zinc-100">Abuse Logs</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
-            {totalCount.toLocaleString()} flagged inputs. HIGH blocks; 3 HIGHs in 24h auto-revokes access.
+            Suspicious requests and submitted input. Legacy submitted-input flags: {totalCount.toLocaleString()}.
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -89,6 +90,8 @@ export default function AIFlagsTab({ toast, readOnly = false }) {
         <span className="flex items-center gap-1.5"><SeverityBadge severity="medium" /> Warn + defense prompt</span>
         <span className="flex items-center gap-1.5"><SeverityBadge severity="low" /> Log only</span>
       </div>
+
+      <EventLogTable toast={toast} mode="abuse" />
 
       {/* Disabled users */}
       <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-5">

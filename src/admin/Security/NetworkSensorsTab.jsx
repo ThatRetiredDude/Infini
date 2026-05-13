@@ -93,9 +93,9 @@ export default function NetworkSensorsTab({ toast, readOnly = false }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-100">Network sensor (Cowrie)</h2>
+          <h2 className="text-xl font-semibold text-zinc-100">SSH / Telnet Decoys</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
-            {totalCount.toLocaleString()} events from Cowrie JSON logs. Expand a row for payload + threat intel.
+            {totalCount.toLocaleString()} SSH, Telnet, and FTP-style events from Cowrie logs. Expand a row for payload + threat intel.
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -137,7 +137,7 @@ export default function NetworkSensorsTab({ toast, readOnly = false }) {
               </ul>
             </div>
             <div>
-              <div className="text-[10px] text-zinc-500 uppercase mb-2">Top Cowrie event types (7d)</div>
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">Top protocol event types (7d)</div>
               <ul className="text-xs space-y-1 max-h-32 overflow-y-auto font-mono">
                 {(stats.by_event || []).slice(0, 14).map((r, i) => (
                   <li key={i} className="flex justify-between gap-2 text-zinc-400 border-b border-zinc-800/80 pb-1">

@@ -117,30 +117,30 @@ export default function Overview({ toast }) {
         </button>
       </div>
 
-      {/* ── AI flags + monitored endpoints ── */}
+      {/* ── Abuse logs + HTTP decoys ── */}
       <section>
-        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">AI Abuse Detection</div>
+        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Abuse and HTTP decoys</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard label="AI Flags (24h)"    value={ai_flags?.flags_24h?.toLocaleString()}  sub={`${ai_flags?.flags_7d?.toLocaleString()} last 7d`} accent="indigo" />
+          <KpiCard label="Abuse logs (24h)"    value={ai_flags?.flags_24h?.toLocaleString()}  sub={`${ai_flags?.flags_7d?.toLocaleString()} last 7d`} accent="indigo" />
           <KpiCard label="HIGH severity"     value={ai_flags?.high_24h?.toLocaleString()}   sub={`${ai_flags?.medium_24h} medium · ${ai_flags?.low_24h} low`} accent="red" />
-          <KpiCard label="MI Access (24h)"   value={mi_access?.hits_24h?.toLocaleString()}  sub={`${mi_access?.honeypot_24h} tokenless hits`} accent="amber" />
-          <KpiCard label="Monitored Endpoints"   value={honeypot?.hits_24h?.toLocaleString()}   sub={`${honeypot?.hits_7d?.toLocaleString()} last 7d`} accent="red" />
+          <KpiCard label="Access trail (24h)"   value={mi_access?.hits_24h?.toLocaleString()}  sub={`${mi_access?.honeypot_24h} tokenless hits`} accent="amber" />
+          <KpiCard label="HTTP decoys"   value={honeypot?.hits_24h?.toLocaleString()}   sub={`${honeypot?.hits_7d?.toLocaleString()} last 7d`} accent="red" />
         </div>
       </section>
 
       <section>
-        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Network sensor (Cowrie)</div>
+        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">SSH / Telnet decoys</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <KpiCard label="Events (24h)" value={network_sensor?.events_24h?.toLocaleString()} sub={`${network_sensor?.events_7d?.toLocaleString()} last 7d`} accent="amber" />
           <KpiCard label="Network IPs (window)" value={data.counts?.network_distinct_ips?.toLocaleString()} sub={`${data.counts?.network_events?.toLocaleString()} events in overview window`} accent="cyan" />
         </div>
       </section>
 
-      {/* ── Data room activity ── */}
+      {/* ── Fake data access ── */}
       <section>
-        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Data Room Activity</div>
+        <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">Fake Data Access</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard label="Data room hits today"   value={maze?.hits_today?.toLocaleString()}     sub={`${maze?.hits_7d?.toLocaleString()} last 7d`} accent="violet" />
+          <KpiCard label="Fake-data hits today"   value={maze?.hits_today?.toLocaleString()}     sub={`${maze?.hits_7d?.toLocaleString()} last 7d`} accent="violet" />
           <KpiCard label="Unique IPs (7d)"   value={maze?.unique_ips_7d?.toLocaleString()}  sub={`${maze?.unique_ips_all?.toLocaleString()} all time`} accent="violet" />
           <KpiCard label="Self-IDs captured" value={maze?.self_ids_all?.toLocaleString()}   sub="operators that identified themselves" accent="green" />
           <KpiCard label="Est. tokens burned" value={fmtTokens(mt.tokens_pipeline_est)}     sub="LLM pipeline estimate (all time)" accent="amber" />
@@ -150,7 +150,7 @@ export default function Overview({ toast }) {
         {mt.total_hits > 0 && (
           <div className="mt-3 rounded-xl border border-zinc-700/60 bg-zinc-900/40 px-5 py-3 flex flex-wrap gap-6 text-xs">
             <div>
-              <span className="text-zinc-500">Total data room requests</span>
+              <span className="text-zinc-500">Total fake-data requests</span>
               <span className="ml-2 text-zinc-200 font-semibold">{Number(mt.total_hits).toLocaleString()}</span>
             </div>
             <div>
@@ -179,16 +179,16 @@ export default function Overview({ toast }) {
         <div className="text-[10px] text-zinc-600 uppercase tracking-widest mb-3">7-Day Trends</div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
-            <Sparkline data={sparklines?.flags || []} color="#f87171" label="AI flags" />
+            <Sparkline data={sparklines?.flags || []} color="#f87171" label="Abuse logs" />
           </div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
             <Sparkline data={sparklines?.mi_access || []} color="#fb923c" label="MI access hits" />
           </div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
-            <Sparkline data={sparklines?.network_sensor || []} color="#22d3ee" label="Network sensor events" />
+            <Sparkline data={sparklines?.network_sensor || []} color="#22d3ee" label="SSH / Telnet events" />
           </div>
           <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 p-4">
-            <Sparkline data={sparklines?.maze || []} color="#a78bfa" label="Data room page hits" />
+            <Sparkline data={sparklines?.maze || []} color="#a78bfa" label="Fake-data page hits" />
           </div>
         </div>
       </section>

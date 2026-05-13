@@ -143,6 +143,9 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
           <AdminCard title="Integrations" onClick={() => navigate('/admin/integrations')}>
             xAI, SMTP, enrichment APIs, Discord, Telegram, and webhooks.
           </AdminCard>
+          <AdminCard title="User Settings" onClick={() => navigate('/settings')}>
+            Account security, authenticator setup, and future profile preferences.
+          </AdminCard>
           <AdminCard title="AI Log Review" onClick={() => navigate('/admin/ai-review')}>
             Send curated log excerpts to Grok for analysis and suggested responses.
           </AdminCard>

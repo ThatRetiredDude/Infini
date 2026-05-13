@@ -69,6 +69,7 @@ import { createCarouselPublicRouter, createCarouselAdminRouter } from './carouse
 import adminAuditRouter from './admin-audit.js';
 import aiLogReviewRouter from './ai-log-review.js';
 import { startCowrieIngestLoop, getCowrieIngestHealth } from './cowrie-ingest.js';
+import { recordDecoyRequest } from './decoy-events.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -719,6 +720,17 @@ function logAccess(req, token) {
       `INSERT INTO access_log (ip, user_agent, referer, token, path) VALUES (?, ?, ?, ?, ?)`,
       [row.ip, row.user_agent, row.referer, row.token, row.path],
     );
+    recordDecoyRequest(req, {
+      source: 'access_trail',
+      decoy_id: token ? 'spa_page_load' : 'hidden_beacon',
+      decoy_type: 'beacon',
+      action: token ? 'view' : 'hidden_link_follow',
+      severity: token ? 'low' : 'medium',
+      suspicious: !token,
+      reasons: token ? ['access_trail'] : ['hidden_link_follow'],
+      token,
+      enrich: false,
+    });
     appendAccessCsv(row);
   } catch (err) {
     console.warn('[access_log] insert failed:', err?.message || err);

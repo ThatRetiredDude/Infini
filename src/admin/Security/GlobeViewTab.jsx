@@ -3,7 +3,7 @@ import { API_BASE, IpCell } from './shared.jsx';
 
 const SOURCE_OPTS = [
   { id: 'honeypot', label: 'Monitored endpoints' },
-  { id: 'maze', label: 'Data room' },
+  { id: 'maze', label: 'Fake data' },
   { id: 'access', label: 'MI access log' },
   { id: 'ai_flags', label: 'AI safety flags' },
 ];
@@ -404,7 +404,7 @@ export default function GlobeViewTab({ toast }) {
               onChange={(e) => setFilters((f) => ({ ...f, selfIdOnly: e.target.checked }))}
               className="rounded border-zinc-600"
             />
-            Data room: self-ID only
+            Fake data: self-ID only
           </label>
 
           <label className="flex flex-col gap-1 text-xs text-zinc-500">

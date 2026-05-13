@@ -82,7 +82,7 @@ function RuleForm({ initial, onSave, onCancel, saving }) {
         )}
         {isMz && (
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">Data room activity — specific IP (optional)</label>
+            <label className="block text-xs text-zinc-400 mb-1">Fake data access — specific IP (optional)</label>
             <input
               type="text"
               value={form.predicate.ip || ''}

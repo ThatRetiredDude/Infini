@@ -1,5 +1,5 @@
 /**
- * MazeTab — Data Room Activity admin view
+ * MazeTab — Fake Data Access admin view
  *
  * Sections:
  *   1. Stats bar (pipeline estimates, est. API cost, request delay, self-IDs)
@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { API_BASE, IpCell } from './shared.jsx';
+import { API_BASE, IpCell, ReasonChips, SeverityBadge } from './shared.jsx';
 import ExportShareBar from './ExportShareBar.jsx';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -233,6 +233,103 @@ function UaSummary({ data }) {
   );
 }
 
+function FakeDataActions({ toast }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: 50, sort: 'newest' });
+      const res = await fetch(`${API_BASE}/admin/security/fake-data/actions?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setRows(data.rows || []);
+    } catch (e) {
+      toast('error', 'Failed to load fake-data actions: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 overflow-hidden">
+      <div className="px-4 py-3 border-b border-zinc-700 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-zinc-300">Fake Data Actions</div>
+          <div className="text-xs text-zinc-600">Maze traversal plus fake pharma, password, and database download attempts.</div>
+        </div>
+        <button onClick={load} disabled={loading}
+          className="px-3 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-zinc-300 text-xs transition-colors disabled:opacity-40">
+          {loading ? '…' : 'Refresh'}
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs min-w-[850px]">
+          <thead className="bg-zinc-900/80">
+            <tr>
+              {['Time', 'Decoy', 'Action', 'Severity', 'IP', 'Path'].map((h) => (
+                <th key={h} className="px-3 py-2 text-[10px] text-zinc-500 uppercase tracking-wide text-left">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800/60">
+            {loading && rows.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-4 text-zinc-600 italic text-center">Loading…</td></tr>
+            )}
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-4 text-zinc-600 italic text-center">No fake-data actions yet.</td></tr>
+            )}
+            {rows.map((r) => {
+              const expanded = expandedId === r.id;
+              return (
+                <>
+                  <tr key={r.id} className="hover:bg-zinc-800/30 cursor-pointer" onClick={() => setExpandedId(expanded ? null : r.id)}>
+                    <td className="px-3 py-1.5 text-zinc-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                    <td className="px-3 py-1.5 font-mono text-zinc-200">{r.decoy_id}</td>
+                    <td className="px-3 py-1.5 text-zinc-300">{r.action}</td>
+                    <td className="px-3 py-1.5"><SeverityBadge severity={r.severity} /></td>
+                    <td className="px-3 py-1.5 font-mono text-zinc-300">{r.ip || '—'}</td>
+                    <td className="px-3 py-1.5 text-zinc-500 truncate max-w-xs" title={r.path}>{r.path || '—'}</td>
+                  </tr>
+                  {expanded && (
+                    <tr key={`${r.id}-expanded`} className="bg-zinc-900/60">
+                      <td colSpan={6} className="px-5 py-3 space-y-2">
+                        <ReasonChips reasons={r.reasons} />
+                        <div className="grid md:grid-cols-2 gap-3">
+                          <div className="rounded-lg bg-zinc-950/60 border border-zinc-800 p-3 space-y-1">
+                            <div className="text-zinc-500 uppercase tracking-wide text-[10px]">Request</div>
+                            <div className="text-zinc-300">Method: {r.method || '—'}</div>
+                            <div className="text-zinc-300 break-all">UA: {r.user_agent || '—'}</div>
+                            <div className="text-zinc-300 break-all">Referer: {r.referer || '—'}</div>
+                          </div>
+                          <div className="rounded-lg bg-zinc-950/60 border border-zinc-800 p-3 space-y-1">
+                            <div className="text-zinc-500 uppercase tracking-wide text-[10px]">Payload</div>
+                            <div className="text-zinc-300">Body hash: {r.body_hash || '—'}</div>
+                            <div className="text-zinc-300">Payload size: {Number(r.payload_size || 0).toLocaleString()} bytes</div>
+                          </div>
+                        </div>
+                        {r.body_excerpt && (
+                          <pre className="text-xs text-zinc-300 bg-zinc-800/60 rounded p-3 whitespace-pre-wrap break-all border border-zinc-700/60 max-h-40 overflow-y-auto">
+                            {r.body_excerpt}
+                          </pre>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function IpDrillDown({ ip, onClose, toast }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -283,7 +380,7 @@ function IpDrillDown({ ip, onClose, toast }) {
                 <div className="text-zinc-600 text-[10px]">at GPT-4o rate</div>
               </div>
               <div>
-                <div className="text-zinc-500 mb-0.5">Data room delay time</div>
+                <div className="text-zinc-500 mb-0.5">Fake-data delay time</div>
                 <div className="text-amber-300 font-semibold">{timeDataRoom(Number(data.summary?.total_hits || 0))}</div>
                 <div className="text-zinc-600 text-[10px]">~1.8s avg delay/req</div>
               </div>
@@ -400,7 +497,7 @@ export default function MazeTab({ toast, readOnly = false }) {
       setTotalCount(data.totalCount || 0);
       setTotalPages(Math.max(1, Math.ceil((data.totalCount || 0) / limit)));
     } catch (e) {
-      toast('error', 'Failed to load data room hits: ' + e.message);
+      toast('error', 'Failed to load fake-data access: ' + e.message);
     } finally {
       setLoading(false);
     }
@@ -425,7 +522,7 @@ export default function MazeTab({ toast, readOnly = false }) {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-100">Data Room Activity</h2>
+          <h2 className="text-xl font-semibold text-zinc-100">Fake Data Access</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
             {totalCount.toLocaleString()} unique IP·day combinations.
             {t.unique_ips > 0 && <span className="ml-2">{t.unique_ips.toLocaleString()} total unique IPs.</span>}
@@ -443,7 +540,7 @@ export default function MazeTab({ toast, readOnly = false }) {
       {/* Stats bar */}
       {t.total_hits > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <StatCard label="Total data room requests" value={Number(t.total_hits).toLocaleString()} color="text-zinc-100" />
+          <StatCard label="Total fake-data requests" value={Number(t.total_hits).toLocaleString()} color="text-zinc-100" />
           <StatCard label="Tokens generated" value={fmtTokens(t.tokens_generated)} sub="~1K/page" color="text-indigo-300" />
           <StatCard label="LLM pipeline est." value={fmtTokens(t.tokens_pipeline_est)} sub="input + output" color="text-violet-300" />
           <StatCard label="Est. API cost" value={`$${t.cost_usd_est?.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} sub="pipeline estimate" color="text-emerald-300" />
@@ -456,6 +553,8 @@ export default function MazeTab({ toast, readOnly = false }) {
 
       {/* Live feed */}
       <LiveFeed toast={toast} />
+
+      <FakeDataActions toast={toast} />
 
       {/* UA summary + depth histogram */}
       {stats && (
@@ -477,7 +576,7 @@ export default function MazeTab({ toast, readOnly = false }) {
       {/* How it works (collapsed) */}
       <details className="rounded-xl border border-zinc-700/60 bg-zinc-900/30">
         <summary className="px-4 py-3 text-xs text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors select-none">
-          How the data room works — 1,000,000+ pages ▾
+          How fake data access works — 1,000,000+ pages ▾
         </summary>
         <div className="px-4 pb-4 text-xs text-zinc-500 space-y-1 border-t border-zinc-700/40 pt-3">
           <div>Entry: <code className="text-zinc-300">GET /api/secrets/explore</code> + <code className="text-zinc-300">/api/secrets/explore/sitemap.xml</code> — off-screen data-room links</div>
@@ -536,7 +635,7 @@ export default function MazeTab({ toast, readOnly = false }) {
           <tbody className="divide-y divide-zinc-800">
             {loading && <tr><td colSpan={9} className="px-4 py-8 text-zinc-500 italic text-center">Loading…</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-8 text-zinc-500 italic text-center">No data room hits yet. Monitoring is active.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-zinc-500 italic text-center">No fake-data access yet. Monitoring is active.</td></tr>
             )}
             {!loading && rows.map((r) => {
               const s = r.enrichment?.summary;

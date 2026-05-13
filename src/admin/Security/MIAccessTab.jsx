@@ -45,7 +45,7 @@ export default function MIAccessTab({ toast, readOnly = false }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-100">MI Access Log</h2>
+          <h2 className="text-xl font-semibold text-zinc-100">Access Trail</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
             {totalCount.toLocaleString()} total hits. Rows with no token = direct hidden-link follower.
           </p>

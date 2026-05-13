@@ -51,6 +51,74 @@ function jsonParseSafe(s, fallback = null) {
   }
 }
 
+function decoyEventWhere(req, { suspiciousOnly = false } = {}) {
+  const where = [];
+  const params = [];
+  if (suspiciousOnly) where.push(`suspicious = 1`);
+  if (!(req.query.since || req.query.until)) {
+    where.push(`created_at > ${rangeCutoff(req, suspiciousOnly ? 24 * 7 : 24)}`);
+  } else {
+    if (req.query.since) {
+      where.push(`created_at >= ?`);
+      params.push(`${String(req.query.since).slice(0, 10)}T00:00:00.000Z`);
+    }
+    if (req.query.until) {
+      where.push(`created_at <= ?`);
+      params.push(`${String(req.query.until).slice(0, 10)}T23:59:59.999Z`);
+    }
+  }
+  for (const [queryKey, col] of [
+    ['source', 'source'],
+    ['decoy_id', 'decoy_id'],
+    ['action', 'action'],
+    ['severity', 'severity'],
+    ['method', 'method'],
+    ['protocol', 'protocol'],
+    ['event_type', 'event_type'],
+    ['ip', 'ip'],
+  ]) {
+    if (req.query[queryKey]) {
+      where.push(`${col} = ?`);
+      params.push(String(req.query[queryKey]).slice(0, 256));
+    }
+  }
+  if (req.query.path_contains) {
+    where.push(`LOWER(IFNULL(path,'')) LIKE ?`);
+    params.push(`%${String(req.query.path_contains).slice(0, 200).toLowerCase()}%`);
+  }
+  if (req.query.has_payload === 'true') where.push(`(body_excerpt IS NOT NULL OR payload_json IS NOT NULL)`);
+  if (req.query.has_payload === 'false') where.push(`body_excerpt IS NULL AND payload_json IS NULL`);
+  if (req.query.has_body === 'true') where.push(`body_excerpt IS NOT NULL`);
+  if (req.query.has_body === 'false') where.push(`body_excerpt IS NULL`);
+  return { where: where.length ? where.join(' AND ') : '1=1', params };
+}
+
+function normalizeDecoyEventRow(r) {
+  return {
+    ...r,
+    suspicious: !!r.suspicious,
+    reasons: jsonParseSafe(r.reasons, []),
+    query: jsonParseSafe(r.query, {}),
+    headers_excerpt: jsonParseSafe(r.headers_excerpt, {}),
+    payload_json: jsonParseSafe(r.payload_json, r.payload_json || null),
+    enrichment: jsonParseSafe(r.enrichment, null),
+  };
+}
+
+function decoyEventOrder(req) {
+  const sort = String(req.query.sort || 'newest');
+  if (sort === 'oldest') return 'created_at ASC';
+  if (sort === 'severity') {
+    return `CASE severity WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC, created_at DESC`;
+  }
+  if (sort === 'payload_size') return 'payload_size DESC, created_at DESC';
+  if (sort === 'action') return 'action ASC, created_at DESC';
+  if (sort === 'ip_frequency') {
+    return `(SELECT COUNT(*) FROM decoy_access_events d2 WHERE d2.ip = decoy_access_events.ip) DESC, created_at DESC`;
+  }
+  return 'created_at DESC';
+}
+
 function sqlHoursAgo(h) {
   const n = Math.max(1, Math.min(24 * 90, h));
   return `strftime('%Y-%m-%dT%H:%M:%fZ','now','-${n} hours')`;
@@ -1190,6 +1258,23 @@ router.get('/maze/stats', (_req, res) => {
   });
 });
 
+router.get('/fake-data/actions', (req, res) => {
+  const { limit, offset } = parsePage(req);
+  const { where, params } = decoyEventWhere(req);
+  const clauses = [`source = 'fake_data'`, where];
+  const rows = getAll(
+    `SELECT * FROM decoy_access_events
+     WHERE ${clauses.join(' AND ')}
+     ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  ).map(normalizeDecoyEventRow);
+  const total = Number(
+    getOne(`SELECT COUNT(*) AS n FROM decoy_access_events WHERE ${clauses.join(' AND ')}`, params)
+      ?.n || 0,
+  );
+  res.json({ rows, total, totalCount: total, limit, offset });
+});
+
 router.get('/tor-feed', async (req, res) => {
   try {
     const stats = getTorFeedStats();
@@ -1264,6 +1349,37 @@ function listAccessLog(req, res) {
 
 router.get('/access', listAccessLog);
 router.get('/mi-access', listAccessLog);
+
+// ─── Unified raw request/event stream ────────────────────────────────────────
+router.get('/requests', (req, res) => {
+  const { limit, offset } = parsePage(req);
+  const { where, params } = decoyEventWhere(req);
+  const order = decoyEventOrder(req);
+  const rows = getAll(
+    `SELECT * FROM decoy_access_events
+     WHERE ${where}
+     ORDER BY ${order}
+     LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  ).map(normalizeDecoyEventRow);
+  const total = Number(getOne(`SELECT COUNT(*) AS n FROM decoy_access_events WHERE ${where}`, params)?.n || 0);
+  res.json({ rows, total, totalCount: total, limit, offset });
+});
+
+router.get('/abuse-logs', (req, res) => {
+  const { limit, offset } = parsePage(req);
+  const { where, params } = decoyEventWhere(req, { suspiciousOnly: true });
+  const order = decoyEventOrder(req);
+  const rows = getAll(
+    `SELECT * FROM decoy_access_events
+     WHERE ${where}
+     ORDER BY ${order}
+     LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  ).map(normalizeDecoyEventRow);
+  const total = Number(getOne(`SELECT COUNT(*) AS n FROM decoy_access_events WHERE ${where}`, params)?.n || 0);
+  res.json({ rows, total, totalCount: total, limit, offset });
+});
 
 // ─── AI flags tab ───────────────────────────────────────────────────────────
 router.get('/ai-flags', (req, res) => {
@@ -1451,6 +1567,9 @@ router.get('/lures', (_req, res) => {
   const known = [
     { source: 'system_prompt_probe', path: 'GET /api/secrets/system-prompt' },
     { source: 'dossier_dump_probe', path: 'GET /api/secrets/internal/dossier-dump' },
+    { source: 'pharma_trials_export', path: 'GET /api/secrets/fake-data/pharma-trials.csv' },
+    { source: 'password_dump', path: 'GET /api/secrets/fake-data/passwords.csv' },
+    { source: 'database_backup', path: 'GET /api/secrets/fake-data/database-export.sql' },
     { source: 'eval_probe', path: 'POST /api/secrets/eval' },
     { source: 'eval_results_probe', path: 'GET /api/secrets/eval/results' },
     { source: 'env_probe', path: 'GET /.env (+ .local/.production)' },

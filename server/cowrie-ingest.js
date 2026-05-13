@@ -8,6 +8,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { getOne, run } from './db.js';
 import { enrichIp } from './ip-enrichment.js';
+import { recordProtocolDecoyEvent } from './decoy-events.js';
 
 let _interval = null;
 let _lastPollMs = 0;
@@ -181,6 +182,16 @@ export function pollCowrieLogOnce() {
         hit_at: hitAt,
         peer_ip: peerIp,
         session_id: sessionId,
+        protocol,
+        event_type: eventType,
+        cowrie_eventid,
+        payload_json: payloadJson,
+      });
+      recordProtocolDecoyEvent({
+        hit_at: hitAt,
+        peer_ip: peerIp,
+        session_id: sessionId,
+        sensor_name: sensorName,
         protocol,
         event_type: eventType,
         cowrie_eventid,

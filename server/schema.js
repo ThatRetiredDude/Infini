@@ -111,6 +111,40 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_honeypot_ip ON ai_honeypot_hits(ip, hit_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_honeypot_source ON ai_honeypot_hits(source, hit_at DESC)`,
 
+  // ─── decoy_access_events (normalized raw event stream for all lures) ──────
+  `CREATE TABLE IF NOT EXISTS decoy_access_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    source TEXT NOT NULL CHECK (source IN ('honeypot','fake_data','protocol','access_trail','submitted_input')),
+    decoy_id TEXT NOT NULL,
+    decoy_type TEXT,
+    action TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'low' CHECK (severity IN ('low','medium','high')),
+    reasons TEXT,
+    suspicious INTEGER NOT NULL DEFAULT 0,
+    ip TEXT,
+    user_agent TEXT,
+    referer TEXT,
+    method TEXT,
+    protocol TEXT,
+    event_type TEXT,
+    path TEXT,
+    query TEXT,
+    token TEXT,
+    session_key TEXT,
+    body_hash TEXT,
+    body_excerpt TEXT,
+    headers_excerpt TEXT,
+    payload_json TEXT,
+    payload_size INTEGER NOT NULL DEFAULT 0,
+    enrichment TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_decoy_events_created ON decoy_access_events(created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_decoy_events_source ON decoy_access_events(source, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_decoy_events_ip ON decoy_access_events(ip, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_decoy_events_decoy ON decoy_access_events(decoy_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_decoy_events_suspicious ON decoy_access_events(suspicious, severity, created_at DESC)`,
+
   // ─── network_sensor_events (Cowrie SSH/Telnet/FTP JSON log ingest) ────────
   `CREATE TABLE IF NOT EXISTS network_sensor_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

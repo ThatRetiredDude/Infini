@@ -1,11 +1,20 @@
 /**
- * Admin TOTP (authenticator app) enrollment — Security hub.
+ * TOTP authenticator enrollment for the signed-in account settings page.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../../lib/api.js';
+import { QRCodeSVG } from 'qrcode.react';
+import { api } from '../lib/api.js';
 
-export default function MfaAdminTab({ toast }) {
+function LocalQrCode({ value, size = 180 }) {
+  return (
+    <div className="rounded-lg border border-zinc-700 bg-white p-2">
+      <QRCodeSVG value={value} size={size} level="M" includeMargin={false} />
+    </div>
+  );
+}
+
+export default function MfaSettingsPanel({ toast }) {
   const [status, setStatus] = useState({ loading: true, totp_enabled: false, enroll_pending: false });
   const [enroll, setEnroll] = useState(null);
   const [verifyCode, setVerifyCode] = useState('');
@@ -98,17 +107,12 @@ export default function MfaAdminTab({ toast }) {
     return <div className="text-zinc-500 text-sm italic py-6">Loading…</div>;
   }
 
-  const qrSrc = enroll?.otpauth_url
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(enroll.otpauth_url)}`
-    : null;
-
   return (
     <div className="space-y-8 max-w-xl">
       <div>
         <h2 className="text-xl font-semibold text-zinc-100">Two-factor authentication</h2>
         <p className="text-zinc-400 text-sm mt-1">
-          Require a time-based code from an authenticator app when signing in. Recommended for admin
-          accounts exposed on the public internet.
+          Require a time-based code from an authenticator app when signing in.
         </p>
       </div>
 
@@ -152,14 +156,15 @@ export default function MfaAdminTab({ toast }) {
       ) : enroll ? (
         <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-5 space-y-4">
           <div className="flex flex-wrap gap-6 items-start">
-            {qrSrc && (
-              <img src={qrSrc} alt="" className="rounded-lg border border-zinc-700 bg-white p-1" width={180} height={180} />
-            )}
+            {enroll.otpauth_url && <LocalQrCode value={enroll.otpauth_url} />}
             <div className="text-sm text-zinc-400 space-y-2 min-w-0 flex-1">
               <p>Manual entry key:</p>
               <code className="block break-all text-zinc-200 text-xs bg-zinc-950 p-2 rounded border border-zinc-800">
                 {enroll.manual_entry_key}
               </code>
+              <p className="text-xs text-zinc-500">
+                The QR code is rendered locally. If your app cannot scan it, use the manual key.
+              </p>
             </div>
           </div>
           <form onSubmit={finishEnroll} className="space-y-3">

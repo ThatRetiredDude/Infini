@@ -16,6 +16,7 @@
 import { createHash } from 'node:crypto';
 import { getOne, run } from './db.js';
 import { audit } from './audit.js';
+import { recordSubmittedInputAbuse } from './decoy-events.js';
 
 // ─── Rule definitions ────────────────────────────────────────────────────────
 const RULES = [
@@ -272,6 +273,18 @@ export function evaluate({ user, route, input, ip, ua, channel, path }) {
         path ? String(path).slice(0, 255) : null,
       ],
     );
+    recordSubmittedInputAbuse({
+      user,
+      route,
+      channel: resolvedChannel,
+      path,
+      ip,
+      ua,
+      severity,
+      reasons,
+      input,
+      actionTaken,
+    });
 
     if (severity === 'high' && user?.id) {
       const threshold = Number(process.env.AI_GUARD_HIGH_REVOKE_THRESHOLD || 3);

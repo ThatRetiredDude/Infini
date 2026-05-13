@@ -173,7 +173,7 @@ export default function MonitoredEndpointsTab({ toast, readOnly = false }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-100">Monitored Endpoint Hits</h2>
+          <h2 className="text-xl font-semibold text-zinc-100">HTTP Decoys</h2>
           <p className="text-zinc-400 text-sm mt-0.5">
             {totalCount.toLocaleString()} hits on internal-looking endpoints. Any hit here is suspicious.
             Expand a row to see passive threat intelligence.
@@ -190,12 +190,12 @@ export default function MonitoredEndpointsTab({ toast, readOnly = false }) {
 
       {/* Monitored endpoints legend */}
       <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4 text-xs space-y-1.5">
-        <div className="text-zinc-400 font-semibold mb-2 uppercase tracking-wide text-[10px]">Active Monitored Endpoints</div>
+        <div className="text-zinc-400 font-semibold mb-2 uppercase tracking-wide text-[10px]">Active HTTP Decoys</div>
         {[
           ['GET /api/secrets/system-prompt', 'system_prompt_probe', 'Returns research policy object'],
           ['GET /api/secrets/internal/dossier-dump', 'dossier_dump_probe', 'Returns paginated data-room export structure'],
           ['POST /api/secrets/eval', 'eval_probe', 'Returns risk-review job response (202)'],
-          ['GET /api/secrets/explore', '—', 'Data room activity route (see Data Room tab)'],
+          ['GET /api/secrets/explore', '—', 'Fake data access route (see Fake Data Access)'],
         ].map(([path, src, desc]) => (
           <div key={path} className="flex items-start gap-3">
             <code className="text-zinc-300 font-mono w-64 shrink-0">{path}</code>

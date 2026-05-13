@@ -10,6 +10,7 @@ import Donations from './pages/Donations.jsx';
 import { fetchMe, logout } from './lib/api.js';
 
 const AdminShell = lazy(() => import('./admin/AdminShell.jsx'));
+const UserSettings = lazy(() => import('./settings/UserSettings.jsx'));
 
 const ROUTES = {
   HOME: 'home',
@@ -17,11 +18,14 @@ const ROUTES = {
   BLOG_POST: 'blog-post',
   DONATIONS: 'donations',
   ADMIN: 'admin',
+  SETTINGS: 'settings',
 };
 
 function parsePath(pathname) {
   if (pathname.startsWith('/admin'))
     return { route: ROUTES.ADMIN, params: { sub: pathname.slice(7) || '' } };
+  if (pathname === '/settings' || pathname.startsWith('/settings/'))
+    return { route: ROUTES.SETTINGS, params: { sub: pathname.slice(10) || '' } };
   if (pathname === '/blog' || pathname === '/blog/') return { route: ROUTES.BLOG, params: {} };
   if (pathname.startsWith('/blog/'))
     return { route: ROUTES.BLOG_POST, params: { slug: pathname.slice(6) } };
@@ -173,6 +177,11 @@ export default function App() {
                   </button>
                 )}
                 <span className="text-ink-300 hidden sm:inline">{user.username}</span>
+                {!user.password_change_required && (
+                  <button type="button" className="btn-ghost" onClick={() => navigate('/settings')}>
+                    Settings
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn-ghost"
@@ -241,6 +250,14 @@ export default function App() {
             Set your administrator password using the prompt above before opening the console.
           </div>
         )}
+        {route.route === ROUTES.SETTINGS && (
+          <SettingsRoute
+            user={user}
+            authChecked={authChecked}
+            onRequireLogin={() => setAuthOpen(true)}
+            navigate={navigate}
+          />
+        )}
       </main>
 
       <footer className="border-t border-ink-700 bg-ink-900/60">
@@ -273,6 +290,43 @@ export default function App() {
       <DataRoomIndex />
       {user?.role === 'guest' && <GuestRestrictions />}
     </div>
+  );
+}
+
+function SettingsRoute({ user, authChecked, onRequireLogin, navigate }) {
+  if (!authChecked) {
+    return <div className="max-w-4xl mx-auto p-8 text-ink-400">Checking session…</div>;
+  }
+  if (!user) {
+    return (
+      <div className="max-w-2xl mx-auto p-8">
+        <div className="card p-6">
+          <h1 className="text-xl mb-2">Sign-in required</h1>
+          <p className="text-ink-400 mb-4">Sign in to manage your account settings.</p>
+          <button type="button" className="btn-primary" onClick={onRequireLogin}>
+            Sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (user.password_change_required) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center text-ink-400 text-sm">
+        Set your administrator password using the prompt above before opening settings.
+      </div>
+    );
+  }
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-4xl mx-auto p-16 text-center text-ink-400 text-sm">
+          Loading settings…
+        </div>
+      }
+    >
+      <UserSettings user={user} navigate={navigate} />
+    </Suspense>
   );
 }
 

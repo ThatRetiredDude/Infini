@@ -4,9 +4,9 @@
  * Unified tabbed admin screen covering:
  *   - Overview (KPIs + sparklines)
  *   - Globe (3D traffic view + filtered spreadsheet)
- *   - MI Access Log (traffic + tokenless link follows)
- *   - Monitored Endpoints (internal-looking endpoint hits + IP enrichment)
- *   - Data Room Activity (procedural archive access + enrichment + self-ID)
+ *   - Access Trail (traffic + tokenless link follows)
+ *   - HTTP Decoys (internal-looking endpoint hits + IP enrichment)
+ *   - Fake Data Access (procedural archive access + enrichment + self-ID)
  *   - Alert Rules
  */
 
@@ -18,24 +18,26 @@ import MonitoredEndpointsTab from './MonitoredEndpointsTab.jsx';
 import MazeTab from './MazeTab.jsx';
 import FlaggedIpsTab from './FlaggedIpsTab.jsx';
 import AlertsTab from './AlertsTab.jsx';
+import EventLogTable from './EventLogTable.jsx';
 
 import GlobeViewTab from './GlobeViewTab.jsx';
-import MfaAdminTab from './MfaAdminTab.jsx';
 
 import NetworkSensorsTab from './NetworkSensorsTab.jsx';
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'globe', label: 'Globe' },
-  { id: 'ai-flags', label: 'AI Flags' },
-  { id: 'mi-access', label: 'MI Access' },
-  { id: 'honeypot',  label: 'Monitored Endpoints' },
-  { id: 'network',   label: 'Network sensor' },
-  { id: 'maze',      label: 'Data Room Activity' },
-  { id: 'flagged',   label: 'Flagged IPs' },
-  { id: 'alerts',    label: 'Alert Rules' },
-  { id: 'mfa',       label: '2FA' },
+  { id: 'overview', label: 'Overview', group: 'Overview' },
+  { id: 'honeypot', label: 'HTTP Decoys', group: 'Decoys' },
+  { id: 'maze', label: 'Fake Data Access', group: 'Decoys' },
+  { id: 'network', label: 'SSH / Telnet Decoys', group: 'Decoys' },
+  { id: 'mi-access', label: 'Access Trail', group: 'Investigation' },
+  { id: 'requests', label: 'All Requests', group: 'Investigation' },
+  { id: 'globe', label: 'Globe', group: 'Investigation' },
+  { id: 'flagged', label: 'Flagged IPs', group: 'Investigation' },
+  { id: 'ai-flags', label: 'Abuse Logs', group: 'Investigation' },
+  { id: 'alerts', label: 'Alert Rules', group: 'Response' },
 ];
+
+const GROUPS = ['Overview', 'Decoys', 'Investigation', 'Response'];
 
 export default function SecurityHub({ onNavigate, onToast, initialTab, readOnly = false }) {
   const validInitial =
@@ -70,7 +72,7 @@ export default function SecurityHub({ onNavigate, onToast, initialTab, readOnly 
         <div>
           <h1 className="text-3xl font-bold text-zinc-100">Security Monitoring</h1>
           <p className="text-zinc-400 mt-1 text-sm">
-            AI abuse detection, MI access, monitored endpoint activity, and alert rules.
+            Decoy activity, suspicious requests, attacker infrastructure, and response rules.
           </p>
         </div>
         {!readOnly && (
@@ -84,19 +86,29 @@ export default function SecurityHub({ onNavigate, onToast, initialTab, readOnly 
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-1 border-b border-zinc-700 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => selectTab(t.id)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              activeTab === t.id
-                ? 'border-indigo-500 text-indigo-300'
-                : 'border-transparent text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            {t.label}
-          </button>
+      <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/30 p-3">
+        {GROUPS.map((group) => (
+          <div key={group} className="flex flex-wrap items-center gap-2">
+            <div className="w-28 shrink-0 text-[10px] uppercase tracking-widest text-zinc-600">
+              {group}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {TABS.filter((t) => t.group === group).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => selectTab(t.id)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                    activeTab === t.id
+                      ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-200'
+                      : 'border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
@@ -106,12 +118,12 @@ export default function SecurityHub({ onNavigate, onToast, initialTab, readOnly 
         {activeTab === 'globe' && <GlobeViewTab toast={toast} />}
         {activeTab === 'ai-flags' && <AIFlagsTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'mi-access' && <MIAccessTab toast={toast} readOnly={readOnly} />}
+        {activeTab === 'requests' && <EventLogTable toast={toast} mode="requests" />}
         {activeTab === 'honeypot'  && <MonitoredEndpointsTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'network'   && <NetworkSensorsTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'maze'      && <MazeTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'flagged'   && <FlaggedIpsTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'alerts'    && <AlertsTab toast={toast} readOnly={readOnly} />}
-        {activeTab === 'mfa'       && <MfaAdminTab toast={toast} />}
       </div>
     </div>
   );
