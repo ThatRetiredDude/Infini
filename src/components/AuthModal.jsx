@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { login, verifyMfaTotp, forgotPassword } from '../lib/api.js';
+import { login, verifyMfaTotp, forgotPassword, register } from '../lib/api.js';
 
 export default function AuthModal({ open, onClose, onAuthed }) {
   const [username, setUsername] = useState('');
@@ -11,6 +11,7 @@ export default function AuthModal({ open, onClose, onAuthed }) {
   const [error, setError] = useState(null);
   const [forgotMode, setForgotMode] = useState(false);
   const [recoveryPath, setRecoveryPath] = useState(null);
+  const [signupMode, setSignupMode] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -23,6 +24,7 @@ export default function AuthModal({ open, onClose, onAuthed }) {
       setBusy(false);
       setForgotMode(false);
       setRecoveryPath(null);
+      setSignupMode(false);
     }
   }, [open]);
 
@@ -100,6 +102,30 @@ export default function AuthModal({ open, onClose, onAuthed }) {
         setError('No account found with that username.');
       } else {
         setError('Could not generate recovery file.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSignup(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await register(username.trim(), password, '');
+      onAuthed?.(data.user);
+      setSignupMode(false);
+    } catch (err) {
+      const code = err?.data?.error;
+      if (code === 'username_taken') {
+        setError('That username is already taken.');
+      } else if (code === 'password_too_weak') {
+        setError('Password must be at least 12 characters.');
+      } else if (code === 'username_invalid') {
+        setError('Username must be 3–32 characters.');
+      } else {
+        setError('Could not create account.');
       }
     } finally {
       setBusy(false);
@@ -240,6 +266,71 @@ export default function AuthModal({ open, onClose, onAuthed }) {
     );
   }
 
+  if (signupMode) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
+        <div className="card p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <h2 className="text-lg mb-1">Create guest demo account</h2>
+          <p className="text-sm text-ink-400 mb-4">
+            Free read-only access to the full Security Monitoring Hub. No exports or edits.
+          </p>
+          <form onSubmit={handleSignup} className="space-y-3">
+            <div>
+              <label className="label" htmlFor="signup-username">
+                Username
+              </label>
+              <input
+                id="signup-username"
+                className="input"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoFocus
+                disabled={busy}
+                required
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="signup-password">
+                Password (min 12 chars)
+              </label>
+              <input
+                id="signup-password"
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={busy}
+                required
+              />
+            </div>
+            {error && <div className="text-sm text-danger">{error}</div>}
+            <div className="flex gap-2 justify-end pt-2">
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => {
+                  setSignupMode(false);
+                  setError(null);
+                }}
+                disabled={busy}
+              >
+                Back to sign in
+              </button>
+              <button type="submit" className="btn-primary" disabled={busy}>
+                {busy ? 'Creating…' : 'Create account & sign in'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 backdrop-blur-sm"
@@ -303,6 +394,22 @@ export default function AuthModal({ open, onClose, onAuthed }) {
             </button>
           </div>
         </form>
+
+        <div className="mt-4 pt-4 border-t border-ink-700 text-center">
+          <button
+            type="button"
+            className="text-sm text-accent hover:text-accent-glow underline"
+            onClick={() => {
+              setSignupMode(true);
+              setError(null);
+              setUsername('');
+              setPassword('');
+            }}
+            disabled={busy}
+          >
+            Want to demo the monitoring system? Create a free guest account →
+          </button>
+        </div>
       </div>
     </div>
   );

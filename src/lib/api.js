@@ -93,3 +93,11 @@ export async function changePassword(current_password, new_password) {
 export async function forgotPassword(username) {
   return api.post('/api/auth/forgot-password', { username });
 }
+
+export async function register(username, password, email = '') {
+  return api.post('/api/auth/register', {
+    username: username.trim(),
+    password,
+    email: email ? email.trim() : null,
+  });
+}
