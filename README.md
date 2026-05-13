@@ -40,6 +40,8 @@ Open **http://localhost:3000**
 
 The system will immediately force you to set a new password (12+ characters). After that, the admin area unlocks.
 
+New env controls for login hardening (see .env.example): MAX_LOGIN_FAILURES, ENFORCE_SESSION_IP_BINDING.
+
 That's it. Your honeypot is live and logging.
 
 ## Every Lure Explained Simply

@@ -49,7 +49,14 @@ export default function AuthModal({ open, onClose, onAuthed }) {
       }
       onAuthed?.(data.user);
     } catch (err) {
-      setError(err?.data?.error === 'invalid_credentials' ? 'Invalid credentials.' : 'Sign-in failed.');
+      const code = err?.data?.error;
+      if (code === 'invalid_credentials') {
+        setError('Invalid credentials.');
+      } else if (code === 'too_many_attempts') {
+        setError('Too many attempts. Please try again later.');
+      } else {
+        setError('Sign-in failed.');
+      }
     } finally {
       setBusy(false);
     }
@@ -70,6 +77,8 @@ export default function AuthModal({ open, onClose, onAuthed }) {
       } else if (code === 'invalid_mfa_ticket') {
         setError('MFA challenge expired. Sign in again.');
         resetMfa();
+      } else if (code === 'too_many_attempts' || err?.status === 429) {
+        setError('Too many attempts. Please try again later.');
       } else {
         setError('Verification failed.');
       }

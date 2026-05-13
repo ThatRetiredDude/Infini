@@ -11,7 +11,7 @@
  *   onExportJson — optional override; defaults to client-side JSON from rows
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { API_BASE } from './shared.jsx';
 import { fetchWithCsrf } from '../../lib/api.js';
 
@@ -51,6 +51,15 @@ export default function ExportShareBar({ rows = [], filename = 'export', source,
   const [showSend, setShowSend] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendForm, setSendForm] = useState({ channel: 'email', recipient: '', format: 'summary' });
+  const [isGuestDemo, setIsGuestDemo] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsGuestDemo(document.body.hasAttribute('data-guest-demo'));
+    check();
+    const obs = new MutationObserver(check);
+    obs.observe(document.body, { attributes: true });
+    return () => obs.disconnect();
+  }, []);
 
   const handleSend = async () => {
     if (!sendForm.recipient.trim()) {
@@ -83,26 +92,33 @@ export default function ExportShareBar({ rows = [], filename = 'export', source,
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <button
-        onClick={() => downloadCsv(rows, filename)}
-        disabled={!rows.length}
-        className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 text-xs font-medium transition-colors disabled:opacity-40"
-      >
-        Export CSV ({rows.length})
-      </button>
-      <button
-        onClick={() => downloadJson(rows, filename)}
-        disabled={!rows.length}
-        className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 text-xs font-medium transition-colors disabled:opacity-40"
-      >
-        Export JSON
-      </button>
-      <button
-        onClick={() => setShowSend(true)}
-        className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/40 text-indigo-300 text-xs font-medium transition-colors"
-      >
-        Send…
-      </button>
+      {!isGuestDemo && (
+        <>
+          <button
+            onClick={() => downloadCsv(rows, filename)}
+            disabled={!rows.length}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 text-xs font-medium transition-colors disabled:opacity-40"
+          >
+            Export CSV ({rows.length})
+          </button>
+          <button
+            onClick={() => downloadJson(rows, filename)}
+            disabled={!rows.length}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 text-xs font-medium transition-colors disabled:opacity-40"
+          >
+            Export JSON
+          </button>
+          <button
+            onClick={() => setShowSend(true)}
+            className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/40 text-indigo-300 text-xs font-medium transition-colors"
+          >
+            Send…
+          </button>
+        </>
+      )}
+      {isGuestDemo && (
+        <span className="text-[10px] text-zinc-500 px-2">Exports disabled in demo</span>
+      )}
 
       {showSend && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowSend(false)}>

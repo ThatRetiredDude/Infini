@@ -13,6 +13,7 @@ export const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || 'mi_csrf';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 const MIN_PASSWORD_LENGTH = 12;
+const ENFORCE_SESSION_IP_BINDING = process.env.ENFORCE_SESSION_IP_BINDING === '1' || process.env.ENFORCE_SESSION_IP_BINDING === 'true';
 
 export function getJwtSecret() {
   const s = process.env.JWT_SECRET;
@@ -117,7 +118,7 @@ export async function createUser({
   passwordChangeRequired = false,
 }) {
   if (!username || !password) throw new Error('username and password are required');
-  if (!['user', 'journalist', 'admin'].includes(role)) {
+  if (!['user', 'journalist', 'admin', 'guest'].includes(role)) {
     throw new Error(`invalid role: ${role}`);
   }
   const id = uuidv4();
@@ -173,13 +174,21 @@ export function revokeSession(sessionId) {
   );
 }
 
-/** Revoke all other sessions for this user (e.g. after password change). */
+/** Revoke all other sessions for this user (e.g. after password change). Pass null/undefined for exceptSessionId to revoke ALL sessions. */
 export function revokeOtherSessions(userId, exceptSessionId) {
-  run(
-    `UPDATE user_sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-     WHERE user_id = ? AND id != ? AND revoked_at IS NULL`,
-    [userId, exceptSessionId],
-  );
+  if (exceptSessionId) {
+    run(
+      `UPDATE user_sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       WHERE user_id = ? AND id != ? AND revoked_at IS NULL`,
+      [userId, exceptSessionId],
+    );
+  } else {
+    run(
+      `UPDATE user_sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       WHERE user_id = ? AND revoked_at IS NULL`,
+      [userId],
+    );
+  }
 }
 
 /**
@@ -233,6 +242,12 @@ export function attachUser(req, _res, next) {
       [decoded.sid],
     );
     if (!session) return next();
+    if (ENFORCE_SESSION_IP_BINDING) {
+      const currentIp = (req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0].trim() : null) || req.ip || req.socket?.remoteAddress || null;
+      if (session.ip && currentIp && session.ip !== currentIp) {
+        return next(); // IP mismatch: treat session as invalid
+      }
+    }
     const user = findUserById(decoded.sub);
     if (!user) return next();
     req.user = {
@@ -270,7 +285,8 @@ export function requireAdmin(req, res, next) {
 export const MIN_NEW_PASSWORD_LENGTH = MIN_PASSWORD_LENGTH;
 
 /** Generate a recovery password file (Jellyfin-style) and set it as the user's current password.
- * Does NOT revoke sessions or set password_change_required.
+ * Revokes ALL existing sessions (forces re-login with the recovery password).
+ * Does NOT set password_change_required.
  * Only the server operator can read the file. The password in the file is now active.
  */
 export async function generateRecoveryPassword(username) {
@@ -287,6 +303,9 @@ export async function generateRecoveryPassword(username) {
     `UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
     [password_hash, user.id],
   );
+
+  // Revoke all sessions so the recovery password requires fresh login everywhere.
+  revokeOtherSessions(user.id, null);
 
   // Resolve secrets dir consistently with DATABASE_FILE convention (Docker: /data, local: ./data)
   // This ensures writes stay inside the persistent volume and avoids permission errors or

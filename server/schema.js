@@ -13,7 +13,7 @@ const STATEMENTS = [
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
     email TEXT UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','journalist','admin')),
+    role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','journalist','admin','guest')),
     is_admin INTEGER NOT NULL DEFAULT 0,
     ai_disabled INTEGER NOT NULL DEFAULT 0,
     ai_disabled_at TEXT,

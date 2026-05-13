@@ -17,7 +17,20 @@ import { sendShare } from './security-alerts.js';
 import { filterTorExits, getTorFeedStats } from './tor-feed.js';
 
 const router = Router();
-router.use(requireAdmin);
+
+// Allow admins full access; guests (demo) get read-only (GET only) to showcase monitoring.
+router.use((req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: 'authentication_required' });
+  const isAdmin = req.user.role === 'admin' || req.user.is_admin;
+  const isGuest = req.user.role === 'guest';
+  if (isAdmin || isGuest) {
+    if (isGuest && req.method !== 'GET') {
+      return res.status(403).json({ error: 'read_only_demo_account' });
+    }
+    return next();
+  }
+  return res.status(403).json({ error: 'admin_required' });
+});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function parsePage(req) {

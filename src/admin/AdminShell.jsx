@@ -38,7 +38,7 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
       </div>
     );
   }
-  if (user.role !== 'admin' && !user.is_admin) {
+  if (user.role !== 'admin' && !user.is_admin && user.role !== 'guest') {
     return (
       <div className="max-w-2xl mx-auto p-8">
         <div className="card p-6">
@@ -52,6 +52,10 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
   }
 
   const section = (sub || '').split('/')[0] || '';
+  const isGuest = user.role === 'guest';
+
+  // For guests, force security view and prevent access to other admin sections
+  const effectiveSection = isGuest && section !== 'security' ? 'security' : section;
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -69,7 +73,7 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
         </div>
       )}
 
-      {section !== 'security' && (
+      {section !== 'security' && !isGuest && (
         <div className="mb-6 flex flex-wrap gap-2 items-center justify-between">
           <h1 className="text-2xl font-semibold text-ink-100">Admin</h1>
           <nav className="flex flex-wrap gap-2 text-sm">
@@ -115,8 +119,14 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
           </nav>
         </div>
       )}
+      {isGuest && (
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-ink-100">Demo — Security Monitoring</h1>
+          <p className="text-sm text-ink-400 mt-1">Read-only view of monitoring capabilities. Sign up to explore.</p>
+        </div>
+      )}
 
-      {section === '' && (
+      {section === '' && !isGuest && (
         <div className="grid gap-4 md:grid-cols-2">
           <AdminCard title="Security Hub" onClick={() => navigate('/admin/security')}>
             Monitored endpoint activity, data-room analytics, flagged IPs, and alert delivery rules.
@@ -141,6 +151,13 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
           </AdminCard>
         </div>
       )}
+      {section === '' && isGuest && (
+        <div>
+          <AdminCard title="Security Hub" onClick={() => navigate('/admin/security')}>
+            Explore the full monitoring suite: endpoints, data-room activity, alerts, flagged IPs, and AI flags.
+          </AdminCard>
+        </div>
+      )}
 
       {section === 'security' && (
         <SecurityHub
@@ -150,13 +167,13 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
         />
       )}
 
-      {section === 'blog' && <BlogAdmin onToast={showToast} />}
-      {section === 'carousel' && <CarouselAdmin onToast={showToast} />}
-      {section === 'integrations' && <IntegrationsAdmin onToast={showToast} />}
-      {section === 'audit' && <AuditAdmin onToast={showToast} />}
-      {section === 'ai-review' && <AiLogReviewAdmin onToast={showToast} />}
-      {section === 'visibility' && <PageVisibilityAdmin onToast={showToast} />}
-      {section === 'branding' && <BrandingAdmin onToast={showToast} />}
+      {section === 'blog' && !isGuest && <BlogAdmin onToast={showToast} />}
+      {section === 'carousel' && !isGuest && <CarouselAdmin onToast={showToast} />}
+      {section === 'integrations' && !isGuest && <IntegrationsAdmin onToast={showToast} />}
+      {section === 'audit' && !isGuest && <AuditAdmin onToast={showToast} />}
+      {section === 'ai-review' && !isGuest && <AiLogReviewAdmin onToast={showToast} />}
+      {section === 'visibility' && !isGuest && <PageVisibilityAdmin onToast={showToast} />}
+      {section === 'branding' && !isGuest && <BrandingAdmin onToast={showToast} />}
     </div>
   );
 }

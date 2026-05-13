@@ -25,6 +25,7 @@ import {
   setAuthCookies,
   clearAuthCookies,
   generateRecoveryPassword,
+  createUser,
 } from './auth.js';
 import { audit, auditReq, getRequestIp } from './audit.js';
 import { buildAccessToken } from './crypto.js';
@@ -278,15 +279,83 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const MAX_LOGIN_FAILURES = Number(process.env.MAX_LOGIN_FAILURES || 5);
+const LOGIN_BLOCK_DURATION_MS = 5 * 60 * 1000;
+const loginFailureMap = new Map(); // lowercased username -> { count: number, blockedUntil: number | null }
+
+function getLoginFailureKey(username) {
+  return String(username || '').toLowerCase();
+}
+
+function isLoginBlocked(username) {
+  const key = getLoginFailureKey(username);
+  const entry = loginFailureMap.get(key);
+  if (!entry || !entry.blockedUntil) return false;
+  if (Date.now() > entry.blockedUntil) {
+    loginFailureMap.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function recordLoginFailure(username) {
+  const key = getLoginFailureKey(username);
+  const now = Date.now();
+  let entry = loginFailureMap.get(key);
+  if (!entry) {
+    entry = { count: 0, blockedUntil: null };
+    loginFailureMap.set(key, entry);
+  }
+  entry.count += 1;
+  if (entry.count >= MAX_LOGIN_FAILURES && !entry.blockedUntil) {
+    entry.blockedUntil = now + LOGIN_BLOCK_DURATION_MS;
+  }
+}
+
+function clearLoginFailures(username) {
+  loginFailureMap.delete(getLoginFailureKey(username));
+}
+
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'username_and_password_required' });
   }
-  const user = findUserByUsername(String(username));
-  if (!user) return res.status(401).json({ error: 'invalid_credentials' });
+  const attemptedUsername = String(username);
+  if (isLoginBlocked(attemptedUsername)) {
+    audit({
+      actionType: 'auth.login_failed',
+      actorUsername: attemptedUsername,
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'],
+      payload: { reason: 'rate_limited' },
+    });
+    return res.status(429).json({ error: 'too_many_attempts' });
+  }
+  const user = findUserByUsername(attemptedUsername);
+  if (!user) {
+    audit({
+      actionType: 'auth.login_failed',
+      actorUsername: attemptedUsername,
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'],
+      payload: { reason: 'user_not_found' },
+    });
+    recordLoginFailure(attemptedUsername);
+    return res.status(401).json({ error: 'invalid_credentials' });
+  }
   const ok = await verifyPassword(String(password), user.password_hash);
-  if (!ok) return res.status(401).json({ error: 'invalid_credentials' });
+  if (!ok) {
+    audit({
+      actionType: 'auth.login_failed',
+      actorUsername: attemptedUsername,
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'],
+      payload: { reason: 'invalid_password' },
+    });
+    recordLoginFailure(attemptedUsername);
+    return res.status(401).json({ error: 'invalid_credentials' });
+  }
 
   if (user.totp_enabled && user.totp_secret_sealed) {
     const ticket = issueMfaTicket(user.id);
@@ -304,6 +373,8 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       },
     });
   }
+
+  clearLoginFailures(attemptedUsername);
 
   const { token, csrfToken } = issueSession(user, {
     ip: getRequestIp(req),
@@ -332,6 +403,68 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   });
 });
 
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour window
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/api/auth/register', registerLimiter, async (req, res) => {
+  const { username, password, email } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'username_and_password_required' });
+  }
+  const uname = String(username).trim();
+  if (uname.length < 3 || uname.length > 32) {
+    return res.status(400).json({ error: 'username_invalid' });
+  }
+  if (String(password).length < MIN_NEW_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: 'password_too_weak' });
+  }
+  if (findUserByUsername(uname)) {
+    return res.status(409).json({ error: 'username_taken' });
+  }
+  try {
+    const user = await createUser({
+      username: uname,
+      email: email ? String(email).trim() : null,
+      password,
+      role: 'guest',
+      passwordChangeRequired: false,
+    });
+    const { token, csrfToken } = issueSession(user, {
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'],
+    });
+    setAuthCookies(res, req, { token, csrfToken });
+    audit({
+      actionType: 'auth.register',
+      actorId: user.id,
+      actorUsername: user.username,
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'],
+    });
+    res.status(201).json({
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        is_admin: !!user.is_admin,
+        email: user.email,
+        password_change_required: !!user.password_change_required,
+        totp_enabled: false,
+      },
+    });
+  } catch (e) {
+    if (e.message && e.message.includes('invalid role')) {
+      return res.status(400).json({ error: 'invalid_role' });
+    }
+    console.error('[register] error', e);
+    return res.status(500).json({ error: 'registration_failed' });
+  }
+});
+
 const mfaVerifyLimiter = rateLimit({
   windowMs: 60_000,
   max: 12,
@@ -348,6 +481,12 @@ app.post('/api/auth/mfa/totp-verify', mfaVerifyLimiter, async (req, res) => {
   try {
     ({ userId } = verifyMfaTicket(ticket));
   } catch {
+    audit({
+      actionType: 'auth.mfa_failed',
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'],
+      payload: { reason: 'invalid_mfa_ticket', ticket: String(ticket || '').slice(0, 8) + '...' },
+    });
     return res.status(401).json({ error: 'invalid_mfa_ticket' });
   }
 
@@ -364,8 +503,17 @@ app.post('/api/auth/mfa/totp-verify', mfaVerifyLimiter, async (req, res) => {
   }
 
   if (!verifyTotpCode(secretPlain, code)) {
+    audit({
+      actionType: 'auth.mfa_failed',
+      actorId: userId,
+      ip: getRequestIp(req),
+      userAgent: req.headers['user-agent'],
+      payload: { reason: 'invalid_totp_code' },
+    });
     return res.status(401).json({ error: 'invalid_totp_code' });
   }
+
+  clearLoginFailures(user.username); // clear any prior password failures on full MFA success
 
   const { token, csrfToken } = issueSession(user, {
     ip: getRequestIp(req),

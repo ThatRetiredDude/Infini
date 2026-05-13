@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import AuthModal from './components/AuthModal.jsx';
 import ChangePasswordGate from './components/ChangePasswordGate.jsx';
 import DataRoomIndex from './components/DataRoomIndex.jsx';
+import GuestRestrictions from './components/GuestRestrictions.jsx';
 import HomePage from './pages/Home.jsx';
 import BlogList from './pages/Blog.jsx';
 import BlogPost from './pages/BlogPost.jsx';
@@ -166,7 +167,7 @@ export default function App() {
           <div className="ml-auto flex items-center gap-2 text-sm">
             {authChecked && user ? (
               <>
-                {(user.role === 'admin' || user.is_admin) && !user.password_change_required && (
+                {(user.role === 'admin' || user.is_admin || user.role === 'guest') && !user.password_change_required && (
                   <button type="button" className="btn-ghost" onClick={() => navigate('/admin')}>
                     Admin
                   </button>
@@ -270,6 +271,7 @@ export default function App() {
       )}
 
       <DataRoomIndex />
+      {user?.role === 'guest' && <GuestRestrictions />}
     </div>
   );
 }
