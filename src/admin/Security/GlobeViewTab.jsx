@@ -14,6 +14,52 @@ const HOUR_PRESETS = [
   { h: 720, label: '30d' },
 ];
 
+function pointColor(d) {
+  if (d.geo_status === 'unknown') return '#94a3b8';
+  if (d.geo_status === 'estimated_country') return '#facc15';
+  if (d.kinds?.includes('honeypot') && d.kinds?.includes('maze')) return '#a78bfa';
+  if (d.kinds?.includes('honeypot')) return '#f472b6';
+  if (d.kinds?.includes('access')) return '#34d399';
+  if (d.kinds?.includes('ai_flag')) return '#fb7185';
+  return '#38bdf8';
+}
+
+function pointLabel(d) {
+  const status =
+    d.geo_status === 'exact'
+      ? 'exact IPInfo location'
+      : d.geo_status === 'estimated_country'
+        ? 'estimated from country'
+        : 'unknown geo cluster';
+  return [
+    `<b>${d.ip || 'Unknown IP'}</b>`,
+    `${d.weight || 0} weighted hits`,
+    `${status}${d.country ? ` · ${d.country}` : ''}`,
+  ].join('<br/>');
+}
+
+function buildArcs(points) {
+  const visible = [...points]
+    .filter((p) => p.lat != null && p.lng != null && p.geo_status !== 'unknown')
+    .sort((a, b) => b.weight - a.weight || String(b.last_seen || '').localeCompare(String(a.last_seen || '')))
+    .slice(0, 80);
+  if (visible.length < 2) return [];
+  const hub = visible[0];
+  return visible.slice(1).map((p) => ({
+    startLat: hub.lat,
+    startLng: hub.lng,
+    endLat: p.lat,
+    endLng: p.lng,
+    color: p.geo_status === 'estimated_country' ? 'rgba(250, 204, 21, 0.28)' : 'rgba(129, 140, 248, 0.32)',
+  }));
+}
+
+function geoStatusLabel(status) {
+  if (status === 'exact') return 'exact';
+  if (status === 'estimated_country') return 'estimated';
+  return 'unknown';
+}
+
 function buildQuery(filters) {
   const p = new URLSearchParams();
   p.set('sources', filters.sources.join(','));
@@ -38,6 +84,7 @@ export default function GlobeViewTab({ toast }) {
   const mountRef = useRef(null);
   const globeRef = useRef(null);
   const [globeReady, setGlobeReady] = useState(false);
+  const [globeError, setGlobeError] = useState(null);
 
   const [filters, setFilters] = useState({
     sources: ['honeypot', 'maze'],
@@ -102,13 +149,14 @@ export default function GlobeViewTab({ toast }) {
     let offResize = null;
     const rootEl = mountRef.current;
     if (!rootEl) return undefined;
+    setGlobeError(null);
 
     Promise.all([import('globe.gl'), import('three')])
       .then(([{ default: Globe }, THREE]) => {
         if (cancelled || !mountRef.current) return;
         const { MeshBasicMaterial, Color } = THREE;
         const h = () => Math.max(380, Math.min(560, window.innerHeight * 0.45));
-        const globe = Globe(mountRef.current)
+        const globe = new Globe(mountRef.current)
           .backgroundColor('#020617')
           .globeMaterial(
             new MeshBasicMaterial({
@@ -127,16 +175,25 @@ export default function GlobeViewTab({ toast }) {
           .pointLng('lng')
           .pointAltitude(0.012)
           .pointRadius((d) => Math.min(0.55, 0.12 + Math.sqrt(d.weight) * 0.06))
-          .pointColor((d) =>
-            d.kinds?.includes('honeypot') && d.kinds?.includes('maze')
-              ? '#a78bfa'
-              : d.kinds?.includes('honeypot')
-                ? '#f472b6'
-                : '#38bdf8',
-          )
+          .pointColor(pointColor)
+          .pointLabel(pointLabel)
           .pointResolution(18)
+          .arcsData([])
+          .arcStartLat('startLat')
+          .arcStartLng('startLng')
+          .arcEndLat('endLat')
+          .arcEndLng('endLng')
+          .arcColor('color')
+          .arcAltitude(0.12)
+          .arcStroke(0.25)
+          .arcDashLength(0.45)
+          .arcDashGap(1.5)
+          .arcDashAnimateTime(8000)
           .onPointClick((p) => {
-            if (p?.ip && toast) toast('info', `${p.ip} · ${p.weight} weighted hits`);
+            if (p?.ip && toast) {
+              const status = p.geo_status === 'exact' ? 'exact' : p.geo_status === 'estimated_country' ? 'estimated' : 'unknown geo';
+              toast('info', `${p.ip} · ${p.weight} weighted hits · ${status}`);
+            }
           });
 
         try {
@@ -161,12 +218,19 @@ export default function GlobeViewTab({ toast }) {
         setGlobeReady(true);
       })
       .catch((e) => {
-        if (toast) toast('error', `Globe GL: ${e.message || e}`);
+        const message = e.message || String(e);
+        if (!cancelled) setGlobeError(message);
+        if (toast) toast('error', `Globe GL: ${message}`);
       });
 
     return () => {
       cancelled = true;
       if (offResize) offResize();
+      try {
+        globeRef.current?._destructor?.();
+      } catch {
+        /* ignore cleanup errors */
+      }
       rootEl.innerHTML = '';
       globeRef.current = null;
       setGlobeReady(false);
@@ -176,6 +240,7 @@ export default function GlobeViewTab({ toast }) {
   useEffect(() => {
     if (!globeReady || !globeRef.current) return;
     globeRef.current.pointsData(points);
+    globeRef.current.arcsData(buildArcs(points));
   }, [globeReady, points]);
 
   const toggleSource = (id) => {
@@ -190,9 +255,9 @@ export default function GlobeViewTab({ toast }) {
   return (
     <div className="space-y-6">
       <p className="text-zinc-400 text-sm max-w-3xl">
-        Spin the globe to correlate enriched IPs (IPInfo lat/lng). Dots aggregate weight across selected
-        sources. The table lists the same filter window — MI access and AI flags have no geo unless enriched
-        elsewhere.
+        Spin the globe to correlate traffic by IP. Bright dots use exact IPInfo coordinates, amber dots are
+        estimated from country-only enrichment, and gray dots are IPs without location data grouped in an
+        unknown cluster. Thin lines connect the highest-volume location to other visible located points.
       </p>
 
       <div className="rounded-xl border border-zinc-700/80 bg-zinc-900/40 p-4 space-y-4">
@@ -379,6 +444,10 @@ export default function GlobeViewTab({ toast }) {
               Points: {meta.points_count} · table rows: {rows.length} (scanned {meta.table_total_before_limit}{' '}
               before cap) · scan_cap {meta.scan_cap}
             </div>
+            <div>
+              Geo: {meta.exact_points || 0} exact · {meta.estimated_points || 0} estimated ·{' '}
+              {meta.unknown_points || 0} unknown
+            </div>
             <div>{meta.note}</div>
           </div>
         )}
@@ -386,13 +455,18 @@ export default function GlobeViewTab({ toast }) {
 
       <div className="rounded-xl border border-zinc-700 overflow-hidden bg-zinc-950 relative">
         <div ref={mountRef} className="w-full" style={{ minHeight: 400 }} />
-        {!globeReady && (
+        {!globeReady && !globeError && (
           <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-sm pointer-events-none bg-zinc-950/80">
             Initializing WebGL globe…
           </div>
         )}
+        {globeError && (
+          <div className="absolute inset-0 flex items-center justify-center text-center text-rose-300 text-sm pointer-events-none bg-zinc-950/90 px-6">
+            Globe failed to initialize: {globeError}
+          </div>
+        )}
         <p className="px-3 py-2 text-[11px] text-zinc-500 border-t border-zinc-800">
-          Drag to rotate · scroll to zoom · click a pillar for IP summary
+          Drag to rotate · scroll to zoom · click a dot for IP summary · purple/pink/blue/green exact · amber estimated · gray unknown
         </p>
       </div>
 
@@ -439,9 +513,12 @@ export default function GlobeViewTab({ toast }) {
                     {r.lat != null && r.lng != null ? (
                       <span>
                         {r.lat.toFixed(2)}, {r.lng.toFixed(2)}
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-zinc-600">
+                          {geoStatusLabel(r.geo_status)}
+                        </span>
                       </span>
                     ) : (
-                      '—'
+                      <span className="text-zinc-600">{geoStatusLabel(r.geo_status)}</span>
                     )}
                   </td>
                 </tr>
