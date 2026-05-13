@@ -3,6 +3,8 @@
 /**
  * Ensures COWRIE_HOME layout and seeds cowrie.cfg from Cowrie's cowrie.cfg.dist.
  * Optional: enable Telnet via COWRIE_TELNET_ENABLED=1 (patches [telnet] enabled).
+ * Cowrie's launcher resolves etc/cowrie.cfg relative to its install directory,
+ * so this also links that path back to the persisted COWRIE_HOME config.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,31 +12,91 @@ import path from 'node:path';
 const home = process.env.COWRIE_HOME || '/data/cowrie';
 const installDir = process.env.COWRIE_INSTALL_DIR || '/opt/cowrie-install';
 const distPath = path.join(installDir, 'etc', 'cowrie.cfg.dist');
+const installCfgPath = path.join(installDir, 'etc', 'cowrie.cfg');
 const cfgPath = path.join(home, 'etc', 'cowrie.cfg');
 
-function patchTelnetEnabled(text) {
+function upsertSectionValue(text, sectionName, key, value) {
   const lines = text.split(/\n/);
-  let inTelnet = false;
+  const sectionRe = new RegExp(`^\\[${sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\s*$`);
+  const anySectionRe = /^\[[^\]]+\]\s*$/;
+  const keyRe = new RegExp(`^\\s*#?\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`, 'i');
   const out = [];
   let patched = false;
+  let inSection = false;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/^\[telnet\]\s*$/.test(line)) {
-      inTelnet = true;
+
+    if (sectionRe.test(line)) {
+      inSection = true;
       out.push(line);
       continue;
     }
-    if (/^\[/.test(line) && !/^\[telnet\]\s*$/.test(line)) {
-      inTelnet = false;
+
+    if (inSection && anySectionRe.test(line)) {
+      if (!patched) {
+        out.push(`${key} = ${value}`);
+        patched = true;
+      }
+      inSection = false;
     }
-    if (inTelnet && /^enabled\s*=\s*false\s*$/i.test(line) && !patched) {
-      out.push('enabled = true');
+
+    if (inSection && keyRe.test(line) && !patched) {
+      out.push(`${key} = ${value}`);
       patched = true;
       continue;
     }
+
     out.push(line);
   }
+
+  if (inSection && !patched) {
+    out.push(`${key} = ${value}`);
+    patched = true;
+  }
+
+  if (!patched) {
+    if (out.length && out[out.length - 1] !== '') out.push('');
+    out.push(`[${sectionName}]`);
+    out.push(`${key} = ${value}`);
+  }
+
   return out.join('\n');
+}
+
+function patchCowrieConfig(text) {
+  let patched = text;
+  patched = upsertSectionValue(patched, 'honeypot', 'log_path', path.join(home, 'var', 'log', 'cowrie'));
+  patched = upsertSectionValue(patched, 'honeypot', 'state_path', path.join(home, 'var', 'lib', 'cowrie'));
+  patched = upsertSectionValue(patched, 'honeypot', 'download_path', `${path.join(home, 'var', 'lib', 'cowrie')}/downloads`);
+  patched = upsertSectionValue(patched, 'honeypot', 'ttylog_path', `${path.join(home, 'var', 'lib', 'cowrie')}/tty`);
+  patched = upsertSectionValue(patched, 'output_jsonlog', 'enabled', 'true');
+  patched = upsertSectionValue(
+    patched,
+    'output_jsonlog',
+    'logfile',
+    process.env.COWRIE_JSON_LOG || path.join(home, 'var', 'log', 'cowrie', 'cowrie.json'),
+  );
+
+  if (process.env.COWRIE_TELNET_ENABLED === '1') {
+    patched = upsertSectionValue(patched, 'telnet', 'enabled', 'true');
+  }
+
+  return patched;
+}
+
+function linkInstallConfigToPersistedConfig() {
+  try {
+    if (fs.existsSync(installCfgPath)) {
+      const st = fs.lstatSync(installCfgPath);
+      if (st.isSymbolicLink() && fs.readlinkSync(installCfgPath) === cfgPath) return;
+      fs.rmSync(installCfgPath, { force: true });
+    }
+    fs.symlinkSync(cfgPath, installCfgPath);
+    console.warn('[prepare-cowrie] linked install cowrie.cfg to persisted COWRIE_HOME config');
+  } catch (err) {
+    console.warn('[prepare-cowrie] failed to link install cowrie.cfg:', err?.message || err);
+  }
 }
 
 function main() {
@@ -52,11 +114,14 @@ function main() {
     }
   }
 
-  if (process.env.COWRIE_TELNET_ENABLED === '1') {
-    let s = fs.readFileSync(cfgPath, 'utf8');
-    s = patchTelnetEnabled(s);
-    fs.writeFileSync(cfgPath, s);
+  const current = fs.readFileSync(cfgPath, 'utf8');
+  const patched = patchCowrieConfig(current);
+  if (patched !== current) {
+    fs.writeFileSync(cfgPath, patched);
+    console.warn('[prepare-cowrie] patched cowrie.cfg for persisted logs/state');
   }
+
+  linkInstallConfigToPersistedConfig();
 }
 
 main();
