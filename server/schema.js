@@ -346,6 +346,7 @@ export function ensureSchema() {
     migrateAiLogReviewsNetwork(db);
   });
   tx();
+  migrateUsersRoleConstraint(db);
 }
 
 function migrateUsersPasswordChangeRequired(db) {
@@ -386,6 +387,65 @@ function migrateUsersTotp(db) {
   }
   if (!names.has('totp_pending_sealed')) {
     db.exec(`ALTER TABLE users ADD COLUMN totp_pending_sealed TEXT`);
+  }
+}
+
+/** Recreate users when an older SQLite CHECK constraint rejects demo guests. */
+function migrateUsersRoleConstraint(db) {
+  const t = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`)
+    .get();
+  const sql = String(t?.sql || '');
+  if (!/role\s+TEXT[\s\S]*CHECK\s*\(/i.test(sql)) return;
+
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE users__new (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        email TEXT UNIQUE COLLATE NOCASE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user',
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        ai_disabled INTEGER NOT NULL DEFAULT 0,
+        ai_disabled_at TEXT,
+        ai_disabled_reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_login_at TEXT,
+        password_change_required INTEGER NOT NULL DEFAULT 0,
+        totp_enabled INTEGER NOT NULL DEFAULT 0,
+        totp_secret_sealed TEXT,
+        totp_pending_sealed TEXT
+      );
+      INSERT INTO users__new (
+        id, username, email, password_hash, role, is_admin,
+        ai_disabled, ai_disabled_at, ai_disabled_reason,
+        created_at, updated_at, last_login_at, password_change_required,
+        totp_enabled, totp_secret_sealed, totp_pending_sealed
+      )
+      SELECT
+        id, username, email, password_hash, role, is_admin,
+        ai_disabled, ai_disabled_at, ai_disabled_reason,
+        created_at, updated_at, last_login_at, password_change_required,
+        totp_enabled, totp_secret_sealed, totp_pending_sealed
+      FROM users;
+      DROP TABLE users;
+      ALTER TABLE users__new RENAME TO users;
+      CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+      COMMIT;
+    `);
+  } catch (e) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // Ignore rollback failures; rethrow the original migration error below.
+    }
+    throw e;
+  } finally {
+    db.pragma('foreign_keys = ON');
   }
 }
 

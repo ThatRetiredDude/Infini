@@ -41,7 +41,7 @@ function EnrichmentPanel({ enrichment }) {
   );
 }
 
-export default function NetworkSensorsTab({ toast }) {
+export default function NetworkSensorsTab({ toast, readOnly = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ ip: '', protocol: '', event_type: '', since: '', until: '' });
@@ -99,7 +99,7 @@ export default function NetworkSensorsTab({ toast }) {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <ExportShareBar rows={rows} filename="network-sensor-events" source="network_sensor" filters={filter} toast={toast} />
+          <ExportShareBar rows={rows} filename="network-sensor-events" source="network_sensor" filters={filter} toast={toast} readOnly={readOnly} />
           <button onClick={() => { loadStats(); load(); }} disabled={loading}
             className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-sm font-medium transition-colors">
             {loading ? 'Loading…' : 'Refresh'}

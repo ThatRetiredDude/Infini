@@ -54,9 +54,6 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
   const section = (sub || '').split('/')[0] || '';
   const isGuest = user.role === 'guest';
 
-  // For guests, force security view and prevent access to other admin sections
-  const effectiveSection = isGuest && section !== 'security' ? 'security' : section;
-
   return (
     <div className="max-w-6xl mx-auto p-6">
       {toast?.text && (
@@ -164,6 +161,7 @@ export default function AdminShell({ user, authChecked, onRequireLogin, sub, nav
           onNavigate={(path) => navigate(path)}
           onToast={showToast}
           initialTab={(sub || '').split('/')[1] || ''}
+          readOnly={isGuest}
         />
       )}
 

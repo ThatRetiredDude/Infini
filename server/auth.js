@@ -341,7 +341,9 @@ export async function generateRecoveryPassword(username) {
   fs.writeFileSync(filePath, content, { mode: 0o600 });
   try {
     fs.chmodSync(filePath, 0o600);
-  } catch {}
+  } catch {
+    // Best effort only; fs.writeFileSync already used restrictive mode above.
+  }
 
   return { recoveryFile: filePath };
 }

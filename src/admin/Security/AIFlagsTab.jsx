@@ -3,7 +3,7 @@ import { API_BASE, SeverityBadge, ActionBadge, ReasonChips, DisabledUsersPanel }
 import ExportShareBar from './ExportShareBar.jsx';
 import { fetchWithCsrf } from '../../lib/api.js';
 
-export default function AIFlagsTab({ toast }) {
+export default function AIFlagsTab({ toast, readOnly = false }) {
   const [flags, setFlags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ severity: '', route: '', channel: '', user_id: '', ip: '', date_from: '', date_to: '' });
@@ -76,7 +76,7 @@ export default function AIFlagsTab({ toast }) {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <ExportShareBar rows={flags} filename="ai-flags" source="ai_flags" filters={filter} toast={toast} />
+          <ExportShareBar rows={flags} filename="ai-flags" source="ai_flags" filters={filter} toast={toast} readOnly={readOnly} />
           <button onClick={loadFlags} disabled={loading}
             className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-sm font-medium transition-colors">
             {loading ? 'Loading…' : 'Refresh'}

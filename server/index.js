@@ -460,6 +460,15 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     if (e.message && e.message.includes('invalid role')) {
       return res.status(400).json({ error: 'invalid_role' });
     }
+    if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'username_or_email_taken' });
+    }
+    if (e.code === 'SQLITE_CONSTRAINT_CHECK') {
+      return res.status(500).json({ error: 'schema_constraint_failed', detail: e.message });
+    }
+    if (e.code === 'SQLITE_CONSTRAINT_NOTNULL') {
+      return res.status(400).json({ error: 'missing_required_field' });
+    }
     console.error('[register] error', e);
     return res.status(500).json({ error: 'registration_failed' });
   }

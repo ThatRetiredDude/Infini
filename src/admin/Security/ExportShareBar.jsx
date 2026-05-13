@@ -11,7 +11,7 @@
  *   onExportJson — optional override; defaults to client-side JSON from rows
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { API_BASE } from './shared.jsx';
 import { fetchWithCsrf } from '../../lib/api.js';
 
@@ -47,19 +47,10 @@ function downloadJson(rows, filename) {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-export default function ExportShareBar({ rows = [], filename = 'export', source, filters = {}, toast }) {
+export default function ExportShareBar({ rows = [], filename = 'export', source, filters = {}, toast, readOnly = false }) {
   const [showSend, setShowSend] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendForm, setSendForm] = useState({ channel: 'email', recipient: '', format: 'summary' });
-  const [isGuestDemo, setIsGuestDemo] = useState(false);
-
-  useEffect(() => {
-    const check = () => setIsGuestDemo(document.body.hasAttribute('data-guest-demo'));
-    check();
-    const obs = new MutationObserver(check);
-    obs.observe(document.body, { attributes: true });
-    return () => obs.disconnect();
-  }, []);
 
   const handleSend = async () => {
     if (!sendForm.recipient.trim()) {
@@ -92,7 +83,7 @@ export default function ExportShareBar({ rows = [], filename = 'export', source,
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {!isGuestDemo && (
+      {!readOnly && (
         <>
           <button
             onClick={() => downloadCsv(rows, filename)}
@@ -116,7 +107,7 @@ export default function ExportShareBar({ rows = [], filename = 'export', source,
           </button>
         </>
       )}
-      {isGuestDemo && (
+      {readOnly && (
         <span className="text-[10px] text-zinc-500 px-2">Exports disabled in demo</span>
       )}
 

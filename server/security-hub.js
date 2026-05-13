@@ -11,7 +11,6 @@
 
 import { Router } from 'express';
 import { getAll, getOne, run } from './db.js';
-import { requireAdmin } from './auth.js';
 import { auditReq } from './audit.js';
 import { sendShare } from './security-alerts.js';
 import { filterTorExits, getTorFeedStats } from './tor-feed.js';

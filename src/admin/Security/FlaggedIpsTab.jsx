@@ -173,7 +173,7 @@ function IpTable({ rows, source, emptyMsg }) {
 
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
-export default function FlaggedIpsTab({ toast }) {
+export default function FlaggedIpsTab({ toast, readOnly = false }) {
   const [data, setData] = useState(null);
   const [torStats, setTorStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -244,10 +244,17 @@ export default function FlaggedIpsTab({ toast }) {
       )}
 
       {/* Blocklist export */}
-      <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4 space-y-2">
-        <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Blocklist Export</div>
-        <BlocklistExport ips={allFlaggedIps} />
-      </div>
+      {!readOnly && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4 space-y-2">
+          <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Blocklist Export</div>
+          <BlocklistExport ips={allFlaggedIps} />
+        </div>
+      )}
+      {readOnly && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4 text-xs text-zinc-500">
+          Blocklist export is disabled in demo mode.
+        </div>
+      )}
 
       {/* Section tabs */}
       <div className="flex gap-1 border-b border-zinc-700">

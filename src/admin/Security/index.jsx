@@ -37,7 +37,7 @@ const TABS = [
   { id: 'mfa',       label: '2FA' },
 ];
 
-export default function SecurityHub({ onNavigate, onToast, initialTab }) {
+export default function SecurityHub({ onNavigate, onToast, initialTab, readOnly = false }) {
   const validInitial =
     initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'overview';
   const [activeTab, setActiveTab] = useState(validInitial);
@@ -73,12 +73,14 @@ export default function SecurityHub({ onNavigate, onToast, initialTab }) {
             AI abuse detection, MI access, monitored endpoint activity, and alert rules.
           </p>
         </div>
-        <button
-          onClick={() => onNavigate('/admin')}
-          className="px-5 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
-        >
-          Back to Dashboard
-        </button>
+        {!readOnly && (
+          <button
+            onClick={() => onNavigate('/admin')}
+            className="px-5 py-2 rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-sm transition-colors"
+          >
+            Back to Dashboard
+          </button>
+        )}
       </div>
 
       {/* Tab nav */}
@@ -102,12 +104,12 @@ export default function SecurityHub({ onNavigate, onToast, initialTab }) {
       <div>
         {activeTab === 'overview' && <Overview toast={toast} />}
         {activeTab === 'globe' && <GlobeViewTab toast={toast} />}
-        {activeTab === 'ai-flags' && <AIFlagsTab toast={toast} />}
-        {activeTab === 'mi-access' && <MIAccessTab toast={toast} />}
-        {activeTab === 'honeypot'  && <MonitoredEndpointsTab toast={toast} />}
-        {activeTab === 'network'   && <NetworkSensorsTab toast={toast} />}
-        {activeTab === 'maze'      && <MazeTab toast={toast} />}
-        {activeTab === 'flagged'   && <FlaggedIpsTab toast={toast} />}
+        {activeTab === 'ai-flags' && <AIFlagsTab toast={toast} readOnly={readOnly} />}
+        {activeTab === 'mi-access' && <MIAccessTab toast={toast} readOnly={readOnly} />}
+        {activeTab === 'honeypot'  && <MonitoredEndpointsTab toast={toast} readOnly={readOnly} />}
+        {activeTab === 'network'   && <NetworkSensorsTab toast={toast} readOnly={readOnly} />}
+        {activeTab === 'maze'      && <MazeTab toast={toast} readOnly={readOnly} />}
+        {activeTab === 'flagged'   && <FlaggedIpsTab toast={toast} readOnly={readOnly} />}
         {activeTab === 'alerts'    && <AlertsTab toast={toast} />}
         {activeTab === 'mfa'       && <MfaAdminTab toast={toast} />}
       </div>

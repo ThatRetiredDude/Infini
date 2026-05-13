@@ -5,7 +5,6 @@
 
 import { Router } from 'express';
 import { getAll, run } from './db.js';
-import { requireAdmin } from './auth.js';
 import { auditReq } from './audit.js';
 
 const router = Router();
