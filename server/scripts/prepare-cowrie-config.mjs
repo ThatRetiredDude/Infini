@@ -2,7 +2,8 @@
 /* global console, process */
 /**
  * Ensures COWRIE_HOME layout and seeds cowrie.cfg from Cowrie's cowrie.cfg.dist.
- * Optional: enable Telnet via COWRIE_TELNET_ENABLED=1 (patches [telnet] enabled).
+ * Telnet is enabled by default for the interactive network honeypot.
+ * Set COWRIE_TELNET_ENABLED=0 to leave Cowrie's stock Telnet setting disabled.
  * Cowrie's launcher resolves etc/cowrie.cfg relative to its install directory,
  * so this also links that path back to the persisted COWRIE_HOME config.
  */
@@ -66,6 +67,8 @@ function upsertSectionValue(text, sectionName, key, value) {
 
 function patchCowrieConfig(text) {
   let patched = text;
+  const hostname = process.env.COWRIE_HOSTNAME || 'prd-bastion-01';
+  patched = upsertSectionValue(patched, 'honeypot', 'hostname', hostname);
   patched = upsertSectionValue(patched, 'honeypot', 'log_path', path.join(home, 'var', 'log', 'cowrie'));
   patched = upsertSectionValue(patched, 'honeypot', 'state_path', path.join(home, 'var', 'lib', 'cowrie'));
   patched = upsertSectionValue(patched, 'honeypot', 'download_path', `${path.join(home, 'var', 'lib', 'cowrie')}/downloads`);
@@ -78,7 +81,7 @@ function patchCowrieConfig(text) {
     process.env.COWRIE_JSON_LOG || path.join(home, 'var', 'log', 'cowrie', 'cowrie.json'),
   );
 
-  if (process.env.COWRIE_TELNET_ENABLED === '1') {
+  if (process.env.COWRIE_TELNET_ENABLED !== '0') {
     patched = upsertSectionValue(patched, 'telnet', 'enabled', 'true');
   }
 

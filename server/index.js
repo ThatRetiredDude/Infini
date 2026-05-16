@@ -43,6 +43,7 @@ import monitoredEndpointRouter, {
   apiKeysHandler,
   internalDebugHandler,
   backupIndexHandler,
+  backupDownloadHandler,
   awsCredsHandler,
   dockerConfigHandler,
   phpmyadminHandler,
@@ -52,6 +53,8 @@ import monitoredEndpointRouter, {
   jenkinsLoginHandler,
   gitlabSignInHandler,
   grafanaLoginHandler,
+  grafanaMfaHandler,
+  passwordResetHandler,
   actuatorEnvHandler,
   owaHandler,
   solrHandler,
@@ -78,6 +81,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const IS_PROD = NODE_ENV === 'production';
+const HONEYPOT_DECOYS_ENABLED = process.env.HONEYPOT_DECOYS_ENABLED !== 'false';
 const ACCESS_LOG_CSV_DIR = process.env.ACCESS_LOG_CSV_DIR
   ? path.resolve(ROOT, process.env.ACCESS_LOG_CSV_DIR)
   : null;
@@ -87,6 +91,20 @@ const uploadsDir = process.env.UPLOADS_DIR
   ? path.resolve(process.env.UPLOADS_DIR)
   : path.join(ROOT, 'data', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+function assertDeceptionSafety() {
+  const blockedStaticFiles = ['.env', '.env.local', '.env.production', 'backup.sql', 'dump.sql', 'db_backup.zip'];
+  for (const name of blockedStaticFiles) {
+    const uploadPath = path.join(uploadsDir, name);
+    const distPath = path.join(ROOT, 'dist', name);
+    if (fs.existsSync(uploadPath) || fs.existsSync(distPath)) {
+      throw new Error(`[honeypot] refusing to start: real sensitive-looking file is statically servable (${name})`);
+    }
+  }
+  if (fs.existsSync(path.join(ROOT, 'dist', '.git'))) {
+    throw new Error('[honeypot] refusing to start: dist contains a .git directory');
+  }
+}
 
 function resolveCorsOrigins() {
   const fromEnv = (process.env.CORS_ORIGINS || '')
@@ -131,7 +149,20 @@ const ADMIN_HTML_CSP = [
   "form-action 'self'",
 ].join('; ');
 
+const SITE_HTML_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https:",
+  "worker-src 'self' blob:",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ');
+
 // ─── Boot: schema ────────────────────────────────────────────────────────────
+assertDeceptionSafety();
 ensureSchema();
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
@@ -224,46 +255,56 @@ app.post('/api/admin/uploads', requireAdmin, upload.single('file'), (req, res) =
 // monitoredEndpointRouter is also mounted under /api/secrets and Express resolves the
 // most-specific path first only when both routers are at the same prefix and
 // the longer one is registered first. Both routers' routes are disjoint.
-app.use('/api/secrets/explore', dataRoomRouter);
-app.use('/api/secrets', monitoredEndpointRouter);
+if (HONEYPOT_DECOYS_ENABLED) {
+  app.use('/api/secrets/explore', dataRoomRouter);
+  app.use('/api/secrets', monitoredEndpointRouter);
+} else {
+  app.use('/api/secrets', (_req, res) => res.status(404).json({ error: 'not_found' }));
+}
 
 // Finite corporate intranet (disjoint from maze and secrets)
-app.use('/intranet', intranetRouter);
+if (HONEYPOT_DECOYS_ENABLED) app.use('/intranet', intranetRouter);
 
 // ─── Scanner-friendly internal-looking URLs ──────────────────────────────────
 // These are the URLs that classic credential / secret / admin scanners look
 // for. Each one returns plausible-looking-but-empty content and logs the hit
 // with a distinct `source` discriminator.
-app.get(['/.env', '/.env.local', '/.env.production', '/api/.env'], envFileHandler);
-app.get('/.git/config', gitConfigHandler);
-app.get('/.git/HEAD', gitHeadHandler);
-app.get(['/.aws/credentials', '/.aws/config'], awsCredsHandler);
-app.get('/.docker/config.json', dockerConfigHandler);
-app.get(['/wp-admin', '/wp-admin/', '/wp-login.php', '/xmlrpc.php'], wpAdminHandler);
-app.get(['/phpmyadmin', '/phpmyadmin/', '/phpMyAdmin', '/phpMyAdmin/'], phpmyadminHandler);
-app.get(['/adminer.php', '/adminer'], adminerHandler);
-app.get(['/openapi.json', '/swagger.json', '/api/docs.json'], openApiHandler);
-app.get(['/api/keys', '/api/admin/api-keys', '/api/admin/keys'], apiKeysHandler);
-app.get(['/api/internal/debug', '/api/admin/debug', '/api/debug/env'], internalDebugHandler);
-app.get(['/backup.sql', '/dump.sql', '/db_backup.zip', '/backups/', '/backups/index.json'], backupIndexHandler);
-app.get('/.well-known/security.txt', securityTxtHandler);
-app.get('/robots.txt', accessPolicyRobotsHandler);
+if (HONEYPOT_DECOYS_ENABLED) {
+  app.get(['/.env', '/.env.local', '/.env.production', '/api/.env'], envFileHandler);
+  app.get('/.git/config', gitConfigHandler);
+  app.get('/.git/HEAD', gitHeadHandler);
+  app.get(['/.aws/credentials', '/.aws/config'], awsCredsHandler);
+  app.get('/.docker/config.json', dockerConfigHandler);
+  app.get(['/wp-admin', '/wp-admin/', '/wp-login.php', '/xmlrpc.php'], wpAdminHandler);
+  app.get(['/phpmyadmin', '/phpmyadmin/', '/phpMyAdmin', '/phpMyAdmin/'], phpmyadminHandler);
+  app.get(['/adminer.php', '/adminer'], adminerHandler);
+  app.get(['/openapi.json', '/swagger.json', '/api/docs.json'], openApiHandler);
+  app.get(['/api/keys', '/api/admin/api-keys', '/api/admin/keys'], apiKeysHandler);
+  app.get(['/api/internal/debug', '/api/admin/debug', '/api/debug/env'], internalDebugHandler);
+  app.get(['/backup.sql', '/dump.sql', '/db_backup.zip', '/backups/', '/backups/index.json'], backupIndexHandler);
+  app.get(['/backups/:file', '/exports/:file', '/api/internal/users/export'], backupDownloadHandler);
+  app.get('/.well-known/security.txt', securityTxtHandler);
+  app.get('/robots.txt', accessPolicyRobotsHandler);
 
-// Easy high-coverage HTTP lures (interactive feedback on login attempts etc.)
-app.get(['/jenkins', '/jenkins/', '/jenkins/login'], jenkinsLoginHandler);
-app.post('/jenkins/j_acegi_security_check', jenkinsLoginHandler);
-app.get(['/users/sign_in', '/gitlab/'], gitlabSignInHandler);
-app.post('/users/sign_in', gitlabSignInHandler);
-app.get(['/login', '/grafana/'], grafanaLoginHandler);
-app.post('/login', grafanaLoginHandler);
-app.get(['/actuator', '/actuator/env', '/actuator/health', '/actuator/beans'], actuatorEnvHandler);
-app.get(['/owa', '/owa/', '/owa/auth.owa'], owaHandler);
-app.post('/owa/auth.owa', owaHandler);
-app.get(['/solr', '/solr/', '/solr/admin'], solrHandler);
-app.get(['/console', '/console/home', '/signin'], awsConsoleHandler);
-app.post('/signin', awsConsoleHandler);
-app.get(['/ecp', '/ecp/', '/ecp/default.aspx'], exchangeEcpHandler);
-app.post('/ecp/default.aspx', exchangeEcpHandler);
+  // Easy high-coverage HTTP lures (interactive feedback on login attempts etc.)
+  app.get(['/jenkins', '/jenkins/', '/jenkins/login'], jenkinsLoginHandler);
+  app.post('/jenkins/j_acegi_security_check', jenkinsLoginHandler);
+  app.get(['/users/sign_in', '/gitlab/'], gitlabSignInHandler);
+  app.post('/users/sign_in', gitlabSignInHandler);
+  app.get(['/login', '/grafana/'], grafanaLoginHandler);
+  app.post('/login', grafanaLoginHandler);
+  app.post('/login/mfa', grafanaMfaHandler);
+  app.get(['/user/password/send-reset-email', '/login/password-reset'], passwordResetHandler);
+  app.post(['/user/password/send-reset-email', '/login/password-reset'], passwordResetHandler);
+  app.get(['/actuator', '/actuator/env', '/actuator/health', '/actuator/beans'], actuatorEnvHandler);
+  app.get(['/owa', '/owa/', '/owa/auth.owa'], owaHandler);
+  app.post('/owa/auth.owa', owaHandler);
+  app.get(['/solr', '/solr/', '/solr/admin'], solrHandler);
+  app.get(['/console', '/console/home', '/signin'], awsConsoleHandler);
+  app.post('/signin', awsConsoleHandler);
+  app.get(['/ecp', '/ecp/', '/ecp/default.aspx'], exchangeEcpHandler);
+  app.post('/ecp/default.aspx', exchangeEcpHandler);
+}
 
 // Any other /api/admin route is a real admin surface: it must never fall
 // through as public. The intentionally exposed decoy admin-looking URLs above
@@ -617,7 +658,7 @@ app.post('/api/auth/forgot-password', forgotPasswordLimiter, async (req, res) =>
   let recoveryFile;
   try {
     ({ recoveryFile } = await generateRecoveryPassword(user.username));
-  } catch (e) {
+  } catch {
     return res.status(500).json({ error: 'recovery_failed' });
   }
 
@@ -803,7 +844,7 @@ app.get('*', (req, res, next) => {
     }
     const injected = html.replace(/<head>/i, `<head>\n    ${headExtra}`);
     const isAdminShell = req.path === '/admin' || req.path.startsWith('/admin/');
-    const headers = { 'Cache-Control': 'no-store' };
+    const headers = { 'Cache-Control': 'no-store', 'Content-Security-Policy': SITE_HTML_CSP };
     if (isAdminShell) {
       headers['Content-Security-Policy'] = ADMIN_HTML_CSP;
     }

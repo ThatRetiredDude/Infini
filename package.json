@@ -15,7 +15,8 @@
     "lint": "eslint . --ext .js,.jsx",
     "test:cowrie-ingest": "node server/scripts/test-cowrie-ingest.mjs",
     "format": "prettier --write .",
-    "smoke": "node server/scripts/smoke-check.mjs"
+    "smoke": "node server/scripts/smoke-check.mjs",
+    "traffic:simulate": "node server/scripts/simulate-traffic.mjs"
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.23.2",

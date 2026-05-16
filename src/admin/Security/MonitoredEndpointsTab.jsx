@@ -19,6 +19,9 @@ const SOURCE_LABELS = {
   api_keys_probe: 'API Keys Probe',
   internal_debug_probe: 'Internal Debug Probe',
   backup_probe: 'Backup Probe',
+  backup_download: 'Backup Download',
+  grafana_mfa_probe: 'Grafana MFA Probe',
+  password_reset_probe: 'Password Reset Probe',
   security_txt_probe: 'Security.txt Probe',
   robots_probe: 'Robots.txt Probe',
 };
@@ -121,18 +124,22 @@ export default function MonitoredEndpointsTab({ toast, readOnly = false }) {
   const [expandedId, setExpandedId] = useState(null);
   const [hpStats, setHpStats] = useState(null);
   const [hpLures, setHpLures] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const limit = 100;
 
   const loadMeta = useCallback(async () => {
     try {
-      const [statsRes, luresRes] = await Promise.all([
+      const [statsRes, luresRes, analyticsRes] = await Promise.all([
         fetch(`${API_BASE}/admin/security/honeypot/stats`),
         fetch(`${API_BASE}/admin/security/lures`),
+        fetch(`${API_BASE}/admin/security/honeypot/analytics`),
       ]);
       const st = statsRes.ok ? await statsRes.json().catch(() => null) : null;
       const lu = luresRes.ok ? await luresRes.json().catch(() => null) : null;
+      const an = analyticsRes.ok ? await analyticsRes.json().catch(() => null) : null;
       if (st) setHpStats(st);
       if (lu?.rows) setHpLures(lu);
+      if (an) setAnalytics(an);
     } catch {
       /* non-critical */
     }
@@ -277,6 +284,92 @@ export default function MonitoredEndpointsTab({ toast, readOnly = false }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {analytics && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/40 p-4 space-y-4">
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Attacker behavior analytics</div>
+            <p className="text-xs text-zinc-500 mt-1">
+              Session-aware lure sequences, credential intent, and user-agent families from normalized decoy events.
+            </p>
+          </div>
+          <div className="grid lg:grid-cols-3 gap-4">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">Credential intent</div>
+              <ul className="space-y-1 text-xs">
+                {(analytics.classification_counts || []).slice(0, 8).map((r) => (
+                  <li key={r.category} className="flex justify-between gap-3 text-zinc-300">
+                    <span className="font-mono truncate">{r.category}</span>
+                    <span className="text-zinc-500">{Number(r.count || 0).toLocaleString()}</span>
+                  </li>
+                ))}
+                {(analytics.classification_counts || []).length === 0 && <li className="text-zinc-600 italic">No credential submissions yet.</li>}
+              </ul>
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">User-agent families</div>
+              <ul className="space-y-1 text-xs">
+                {(analytics.ua_families || []).slice(0, 8).map((r) => (
+                  <li key={r.family} className="flex justify-between gap-3 text-zinc-300">
+                    <span className="truncate">{r.family}</span>
+                    <span className="text-zinc-500">{Number(r.count || 0).toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">Recent credential attempts</div>
+              <ul className="space-y-2 text-xs max-h-44 overflow-y-auto">
+                {(analytics.credentials || []).slice(0, 6).map((r, i) => (
+                  <li key={`${r.created_at}-${i}`} className="border-b border-zinc-800 pb-2">
+                    <div className="flex justify-between gap-2 text-zinc-300">
+                      <span className="font-mono">{r.decoy_id}</span>
+                      <span className="text-zinc-500">{new Date(r.created_at).toLocaleTimeString()}</span>
+                    </div>
+                    <div className="text-zinc-500 truncate">
+                      {r.classification?.category || 'mfa_code_submit'} · {r.classification?.username_excerpt || r.ip || 'unknown'}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="grid lg:grid-cols-2 gap-4">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">Top IP timelines</div>
+              <div className="space-y-2 max-h-56 overflow-y-auto text-xs">
+                {(analytics.timeline || []).slice(0, 8).map((r) => (
+                  <div key={r.ip} className="border-b border-zinc-800 pb-2">
+                    <div className="flex justify-between text-zinc-300">
+                      <span className="font-mono">{r.ip}</span>
+                      <span className="text-zinc-500">{Number(r.events || 0)} events · {Number(r.decoys || 0)} decoys</span>
+                    </div>
+                    <div className="text-zinc-600 font-mono truncate mt-1" title={(r.sequence || []).join(' -> ')}>
+                      {(r.sequence || []).join(' -> ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+              <div className="text-[10px] text-zinc-500 uppercase mb-2">Lure session clusters</div>
+              <div className="space-y-2 max-h-56 overflow-y-auto text-xs">
+                {(analytics.sessions || []).slice(0, 8).map((r) => (
+                  <div key={r.session_key} className="border-b border-zinc-800 pb-2">
+                    <div className="flex justify-between text-zinc-300">
+                      <span className="font-mono">{r.session_key}</span>
+                      <span className="text-zinc-500">{Number(r.events || 0)} events</span>
+                    </div>
+                    <div className="text-zinc-600 font-mono truncate mt-1" title={(r.decoy_sequence || []).join(' -> ')}>
+                      {(r.decoy_sequence || []).join(' -> ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}

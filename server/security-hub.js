@@ -1004,6 +1004,100 @@ router.get('/honeypot/stats', (_req, res) => {
   });
 });
 
+router.get('/honeypot/analytics', (req, res) => {
+  const since = rangeCutoff(req, 24 * 7);
+  const timeline = getAll(`
+    SELECT ip,
+           MIN(created_at) AS first_seen,
+           MAX(created_at) AS last_seen,
+           COUNT(*) AS events,
+           COUNT(DISTINCT decoy_id) AS decoys,
+           GROUP_CONCAT(decoy_id || ':' || action, ' -> ') AS sequence
+      FROM decoy_access_events
+      WHERE created_at > ${since}
+        AND ip IS NOT NULL
+        AND source IN ('honeypot','fake_data')
+      GROUP BY ip
+      ORDER BY events DESC, last_seen DESC
+      LIMIT 20
+  `).map((r) => ({
+    ...r,
+    events: Number(r.events || 0),
+    decoys: Number(r.decoys || 0),
+    sequence: String(r.sequence || '').split(' -> ').slice(-12),
+  }));
+
+  const sessions = getAll(`
+    SELECT session_key,
+           MIN(created_at) AS first_seen,
+           MAX(created_at) AS last_seen,
+           COUNT(*) AS events,
+           COUNT(DISTINCT ip) AS ips,
+           GROUP_CONCAT(decoy_id, ' -> ') AS decoy_sequence
+      FROM decoy_access_events
+      WHERE created_at > ${since}
+        AND session_key IS NOT NULL
+        AND source IN ('honeypot','fake_data')
+      GROUP BY session_key
+      ORDER BY events DESC, last_seen DESC
+      LIMIT 20
+  `).map((r) => ({
+    ...r,
+    events: Number(r.events || 0),
+    ips: Number(r.ips || 0),
+    decoy_sequence: String(r.decoy_sequence || '').split(' -> ').slice(-12),
+  }));
+
+  const credentialRows = getAll(`
+    SELECT created_at, ip, user_agent, decoy_id, severity, reasons, payload_json
+      FROM decoy_access_events
+      WHERE created_at > ${since}
+        AND action IN ('credential_submit','mfa_submit')
+      ORDER BY created_at DESC
+      LIMIT 100
+  `).map((r) => {
+    const payload = jsonParseSafe(r.payload_json, {});
+    return {
+      ...r,
+      reasons: jsonParseSafe(r.reasons, []),
+      payload_json: payload,
+      classification: payload?.credential_classification || null,
+    };
+  });
+
+  const classificationCounts = new Map();
+  for (const row of credentialRows) {
+    const key = row.classification?.category || (row.decoy_id === 'grafana_mfa_probe' ? 'mfa_code_submit' : 'unknown');
+    classificationCounts.set(key, (classificationCounts.get(key) || 0) + 1);
+  }
+
+  const uaRows = getAll(`
+    SELECT user_agent, COUNT(*) AS events
+      FROM decoy_access_events
+      WHERE created_at > ${since}
+        AND source IN ('honeypot','fake_data')
+      GROUP BY user_agent
+      ORDER BY events DESC
+      LIMIT 100
+  `);
+  const uaFamilies = new Map();
+  for (const row of uaRows) {
+    const family = uaFamily(row.user_agent);
+    uaFamilies.set(family, (uaFamilies.get(family) || 0) + Number(row.events || 0));
+  }
+
+  res.json({
+    timeline,
+    sessions,
+    credentials: credentialRows.slice(0, 25),
+    classification_counts: [...classificationCounts.entries()].map(([category, count]) => ({ category, count })),
+    ua_families: [...uaFamilies.entries()]
+      .map(([family, count]) => ({ family, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12),
+  });
+});
+
 // ─── Monitored endpoints tab ────────────────────────────────────────────────
 router.get('/honeypot', (req, res) => {
   if (req.query.since || req.query.until) {
@@ -1718,6 +1812,9 @@ router.get('/lures', (_req, res) => {
     { source: 'api_keys_probe', path: 'GET /api/keys, /api/admin/api-keys' },
     { source: 'internal_debug_probe', path: 'GET /api/internal/debug' },
     { source: 'backup_probe', path: 'GET /backup.sql, /dump.sql, /db_backup.zip' },
+    { source: 'backup_download', path: 'GET /backups/:file, /exports/:file, /api/internal/users/export' },
+    { source: 'grafana_mfa_probe', path: 'POST /login/mfa' },
+    { source: 'password_reset_probe', path: 'GET/POST /user/password/send-reset-email' },
     { source: 'security_txt_probe', path: 'GET /.well-known/security.txt' },
     { source: 'robots_probe', path: 'GET /robots.txt' },
   ];
