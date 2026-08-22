@@ -2,9 +2,9 @@ services:
   infini:
     build: .
     container_name: infini
-    restart: "no"
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:${HOST_PORT:-3000}:3000"
+      - "${HOST_PORT:-3000}:3000"
       # Cowrie honeypot (SSH on 2222, Telnet on 2223) — enabled by default via INFINI_NETWORK_HONEYPOT_ENABLED=1.
       # Change host side ports if they conflict on your host.
       - "${HOST_SSH_HONEYPOT_PORT:-2222}:2222"
@@ -27,16 +27,14 @@ services:
       start_period: 90s
     volumes:
       - infini-data:/data
-    networks:
-      - infini_app
 
   # Network banner + full MySQL honeypot sidecar.
   # FTP (21) + Postgres banner (5432) + MySQL pharma trap (3306 or random).
-  # Isolated from real Infini app network (Phase 2 lockdown).
+  # May require --privileged or cap_add: NET_BIND_SERVICE + iptables REDIRECT for low ports.
   honeypot-sidecar:
     build: ./sidecar
     container_name: infini-sidecar
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "21:21"
       # MySQL honeypot (pharma infinite maze + password hashes).
@@ -44,15 +42,7 @@ services:
       # Production lure: set MYSQL_HONEYPOT_PORT=3306 AFTER moving real MySQL to 33306 (see docs/honeypot-mysql-pharma.md)
       - "${MYSQL_HONEYPOT_PORT:-33306}:3306"
       - "5432:5432"
-    networks:
-      - infini_honeypot
 
 volumes:
   infini-data:
     driver: local
-
-networks:
-  infini_app:
-    name: infini_app
-  infini_honeypot:
-    name: infini_honeypot

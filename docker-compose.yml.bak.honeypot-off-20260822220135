@@ -2,7 +2,7 @@ services:
   infini:
     build: .
     container_name: infini
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "127.0.0.1:${HOST_PORT:-3000}:3000"
       # Cowrie honeypot (SSH on 2222, Telnet on 2223) — enabled by default via INFINI_NETWORK_HONEYPOT_ENABLED=1.
@@ -36,7 +36,7 @@ services:
   honeypot-sidecar:
     build: ./sidecar
     container_name: infini-sidecar
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "21:21"
       # MySQL honeypot (pharma infinite maze + password hashes).
